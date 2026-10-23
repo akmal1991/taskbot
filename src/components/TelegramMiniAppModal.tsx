@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, TaskProof, ProofType } from '../types';
+import { authorizeTelegramAction, TelegramAction } from '../utils/telegramAuth';
 import { 
   X, 
   Send, 
@@ -43,6 +44,8 @@ export const TelegramMiniAppModal: React.FC = () => {
     return activeTmaTaskId || tasks[0]?.id || '';
   });
   const [filterPeriod, setFilterPeriod] = useState<'TODAY' | 'ACTIVE' | 'ALL'>('TODAY');
+  const [telegramAuthStatus, setTelegramAuthStatus] = useState<'checking' | 'authorized' | 'unauthorized'>('checking');
+  const [telegramAuthError, setTelegramAuthError] = useState('');
 
   // Proof form states
   const [proofType, setProofType] = useState<ProofType>('DOCUMENT');
@@ -70,6 +73,40 @@ export const TelegramMiniAppModal: React.FC = () => {
   const [botInput, setBotInput] = useState('');
 
   useEffect(() => {
+    if (!isTmaOpen) return;
+
+    let isCurrent = true;
+    setTelegramAuthStatus('checking');
+    setTelegramAuthError('');
+    authorizeTelegramAction('SESSION_CHECK', '', currentUser.telegramId || '')
+      .then(() => {
+        if (isCurrent) setTelegramAuthStatus('authorized');
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent) return;
+        setTelegramAuthStatus('unauthorized');
+        setTelegramAuthError(error instanceof Error ? error.message : 'Telegram sessiyasi tekshirilmadi.');
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isTmaOpen, currentUser.telegramId]);
+
+  const authorizeAction = async (action: TelegramAction, taskId: string): Promise<boolean> => {
+    try {
+      await authorizeTelegramAction(action, taskId, currentUser.telegramId || '');
+      setTelegramAuthStatus('authorized');
+      setTelegramAuthError('');
+      return true;
+    } catch (error) {
+      setTelegramAuthStatus('unauthorized');
+      setTelegramAuthError(error instanceof Error ? error.message : 'Telegram sessiyasi tekshirilmadi.');
+      return false;
+    }
+  };
+
+  useEffect(() => {
     if (activeTmaTaskId) {
       setSelectedTaskId(activeTmaTaskId);
       const target = tasks.find(t => t.id === activeTmaTaskId);
@@ -93,7 +130,8 @@ export const TelegramMiniAppModal: React.FC = () => {
 
   const activeTask = tasks.find(t => t.id === selectedTaskId) || workerTasks[0] || tasks[0];
 
-  const handleClockIn = (taskId: string) => {
+  const handleClockIn = async (taskId: string) => {
+    if (!(await authorizeAction('CLOCK_IN', taskId))) return;
     clockInTask(taskId);
     setBotMessages(prev => [
       ...prev,
@@ -111,7 +149,7 @@ export const TelegramMiniAppModal: React.FC = () => {
     ]);
   };
 
-  const handleProofSubmit = (e: React.FormEvent) => {
+  const handleProofSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setProofError('');
 
@@ -119,6 +157,8 @@ export const TelegramMiniAppModal: React.FC = () => {
       setProofError(`Matnli xulosa kamida 20 belgidan iborat bo'lishi shart! (Hozir: ${proofNote.trim().length} ta)`);
       return;
     }
+
+    if (!(await authorizeAction('SUBMIT_PROOF', activeTask.id))) return;
 
     const success = submitProof(activeTask.id, {
       taskId: activeTask.id,
@@ -150,6 +190,16 @@ export const TelegramMiniAppModal: React.FC = () => {
         setProofSuccess(false);
         setActiveTab('TASKS');
       }, 1500);
+    }
+  };
+
+  const handleProofReview = async (taskId: string, proofId: string, approve: boolean) => {
+    const action = approve ? 'APPROVE_PROOF' : 'REJECT_PROOF';
+    if (!(await authorizeAction(action, taskId))) return;
+    if (approve) {
+      approveProof(taskId, proofId, 'Telegram orqali tasdiqlandi.');
+    } else {
+      rejectProof(taskId, proofId, 'Telegram orqali qaytarildi: qayta ko‘rib chiqilsin.');
     }
   };
 
@@ -236,6 +286,21 @@ export const TelegramMiniAppModal: React.FC = () => {
 
           {/* Mini App Body Viewport */}
           <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-[#0e1621]">
+            {telegramAuthStatus !== 'authorized' && (
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-700/70 bg-amber-950/70 px-3 py-2 text-[11px] text-amber-200"
+              >
+                <div className="font-bold">
+                  {telegramAuthStatus === 'checking' ? 'Telegram sessiyasi tekshirilmoqda…' : 'Telegram tasdiqlashi talab qilinadi'}
+                </div>
+                {telegramAuthError && <div className="mt-1">{telegramAuthError}</div>}
+                {telegramAuthStatus === 'unauthorized' && (
+                  <div className="mt-1">Topshiriq amallari faqat haqiqiy Telegram Mini App sessiyasi bilan ishlaydi.</div>
+                )}
+              </div>
+            )}
+
             {/* VIEW 1: MY TASKS */}
             {activeTab === 'TASKS' && (
               <div className="space-y-3">
@@ -330,7 +395,8 @@ export const TelegramMiniAppModal: React.FC = () => {
                         {task.status === 'ASSIGNED' || task.status === 'PENDING' ? (
                           <button
                             onClick={() => handleClockIn(task.id)}
-                            className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                            disabled={telegramAuthStatus !== 'authorized'}
+                            className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
                           >
                             <Clock className="w-3.5 h-3.5" />
                             <span>Ishni boshlash (Clock In)</span>
@@ -496,7 +562,8 @@ export const TelegramMiniAppModal: React.FC = () => {
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 px-4 bg-sky-500 hover:bg-sky-400 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                      disabled={telegramAuthStatus !== 'authorized'}
+                      className="w-full py-2.5 px-4 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-1.5"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Ko'rikka Topshirish (SUBMIT)</span>
@@ -541,14 +608,16 @@ export const TelegramMiniAppModal: React.FC = () => {
 
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           <button
-                            onClick={() => rejectProof(t.id, t.proofs[0]?.id || '', "Telegram orqali qaytarildi: qayta ko'rib chiqilsin.")}
-                            className="py-1.5 px-3 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800 text-rose-300 font-bold rounded-xl text-[11px]"
+                            disabled={telegramAuthStatus !== 'authorized'}
+                            onClick={() => void handleProofReview(t.id, t.proofs[0]?.id || '', false)}
+                            className="py-1.5 px-3 bg-rose-950/60 hover:bg-rose-900/60 disabled:opacity-50 disabled:cursor-not-allowed border border-rose-800 text-rose-300 font-bold rounded-xl text-[11px]"
                           >
                             ↩️ Qaytarish
                           </button>
                           <button
-                            onClick={() => approveProof(t.id, t.proofs[0]?.id || '', "Telegram orqali tasdiqlandi.")}
-                            className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-[11px]"
+                            disabled={telegramAuthStatus !== 'authorized'}
+                            onClick={() => void handleProofReview(t.id, t.proofs[0]?.id || '', true)}
+                            className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-[11px]"
                           >
                             ✅ Tasdiqlash
                           </button>

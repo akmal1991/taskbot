@@ -23,4 +23,4 @@ bun run build
 
 ## Environment settings
 
-No environment variables are required to launch the current preview. `.env.example` mentions `GEMINI_API_KEY` and `APP_URL` for an AI Studio deployment, but the current source does not read either setting. Do not add placeholder values to Replit Secrets.
+The preview launches without Telegram credentials, but Telegram task actions stay blocked until the server-side `TELEGRAM_BOT_TOKEN` secret is configured. Never use a `VITE_`-prefixed variable for this token. `.env.example` also mentions `GEMINI_API_KEY` and `APP_URL` for an AI Studio deployment.
