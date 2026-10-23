@@ -26,14 +26,14 @@ export const ProofVerificationConsole: React.FC = () => {
   } = useApp();
 
   const [filterMode, setFilterMode] = useState<'PENDING' | 'HISTORY' | 'ALL'>('PENDING');
-  const [selectedTask, setSelectedTask] = useState<Task | null>(() => {
-    return tasks.find(t => t.status === 'SUBMITTED_FOR_REVIEW') || tasks[0] || null;
-  });
+  const [selectedTaskId, setSelectedTaskId] = useState<string>(() => tasks.find(t => t.status === 'SUBMITTED_FOR_REVIEW')?.id || '');
+  const selectedTask = tasks.find(task => task.id === selectedTaskId);
   const [reviewerRemarks, setReviewerRemarks] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
 
   // Collect all tasks that have submitted proofs
   const tasksWithProofs = tasks.filter(t => {
+    if (t.archivedAt || t.draft) return false;
     if (filterMode === 'PENDING') return t.status === 'SUBMITTED_FOR_REVIEW';
     if (filterMode === 'HISTORY') return t.proofs.some(p => p.status === 'APPROVED' || p.status === 'REJECTED');
     return t.proofs.length > 0;
@@ -41,20 +41,22 @@ export const ProofVerificationConsole: React.FC = () => {
 
   const activeProof: TaskProof | undefined = selectedTask?.proofs[0];
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!selectedTask || !activeProof) return;
-    approveProof(selectedTask.id, activeProof.id, reviewerRemarks.trim() || "Topshiriq mezonlarga muvofiq bajarildi deb qabul qilindi.");
+    try { await approveProof(selectedTask.id, activeProof.id, reviewerRemarks.trim() || "Topshiriq mezonlarga muvofiq bajarildi deb qabul qilindi."); }
+    catch (e) { setFeedbackError((e as Error).message); return; }
     setReviewerRemarks('');
     setFeedbackError('');
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!selectedTask || !activeProof) return;
     if (!reviewerRemarks.trim()) {
       setFeedbackError("Qaytarish sababi va kamchiliklarni ko'rsatuvchi izoh kiritish majburiy!");
       return;
     }
-    rejectProof(selectedTask.id, activeProof.id, reviewerRemarks.trim());
+    try { await rejectProof(selectedTask.id, activeProof.id, reviewerRemarks.trim()); }
+    catch (e) { setFeedbackError((e as Error).message); return; }
     setReviewerRemarks('');
     setFeedbackError('');
   };
@@ -128,7 +130,7 @@ export const ProofVerificationConsole: React.FC = () => {
                   <div
                     key={task.id}
                     onClick={() => {
-                      setSelectedTask(task);
+                      setSelectedTaskId(task.id);
                       setReviewerRemarks('');
                       setFeedbackError('');
                     }}
@@ -269,18 +271,18 @@ export const ProofVerificationConsole: React.FC = () => {
                             {activeProof.fileName}
                           </div>
                           <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                            {activeProof.fileSize || '2.1 MB'} · PDF/Hujjat
+                            {activeProof.fileSize || '—'} · {activeProof.type}
                           </div>
                         </div>
                       </div>
-                      <a
-                        href={activeProof.artifactUrl || "#"}
+                      {activeProof.fileUrl ? <a
+                        href={activeProof.fileUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
                       >
                         Ko'rish
-                      </a>
+                      </a> : <span className="text-xs text-amber-700">Original file bytes are unavailable.</span>}
                     </div>
                   </div>
                 )}
@@ -330,7 +332,8 @@ export const ProofVerificationConsole: React.FC = () => {
               )}
 
               {/* Verification Action Form (only if pending or can re-review) */}
-              {selectedTask.status === 'SUBMITTED_FOR_REVIEW' && (
+              {selectedTask.status === 'SUBMITTED_FOR_REVIEW' && selectedTask.assignedToId !== currentUser.id &&
+                (currentUser.role === 'ADMIN' || !selectedTask.approverId || selectedTask.approverId === currentUser.id) && (
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">

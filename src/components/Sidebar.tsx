@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { canAccessView } from '../utils/permissions';
 import { 
   LayoutDashboard, 
   CheckSquare, 
@@ -22,7 +23,8 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
   const { 
-    currentUser, 
+    currentUser,
+    permissions,
     tasks, 
     pendingProofsCount, 
     overdueTasksCount, 
@@ -36,14 +38,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
       label: 'Boshqaruv Paneli',
       icon: LayoutDashboard,
       badge: null,
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN', 'WORKER', 'USER'],
+      allowedRoles: ['DIRECTOR', 'ADMIN', 'WORKER'],
     },
     {
       id: 'tasks',
       label: 'Ish Reja Vazifalari',
       icon: CheckSquare,
       badge: tasks.length.toString(),
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN', 'WORKER'],
+      allowedRoles: ['DIRECTOR', 'ADMIN', 'WORKER'],
     },
     {
       id: 'proofs',
@@ -51,29 +53,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
       icon: FileCheck2,
       badge: pendingProofsCount > 0 ? pendingProofsCount.toString() : null,
       badgeColor: 'amber',
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN'],
+      allowedRoles: ['DIRECTOR', 'ADMIN'],
     },
     {
       id: 'excel',
       label: 'Excel Ingestion & Reja',
       icon: FileSpreadsheet,
       badge: null,
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN'],
+      allowedRoles: ['ADMIN'],
     },
     {
-      id: 'users',
-      label: 'Xodimlar & Telegram ID',
+      id: 'admin',
+      label: 'Administration',
       icon: Users2,
       badge: null,
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN'],
+      allowedRoles: ['ADMIN'],
     },
     {
       id: 'scheduler',
-      label: 'Redis & Queue Navbati',
+      label: 'Notification jobs',
       icon: Timer,
       badge: overdueTasksCount > 0 ? `${overdueTasksCount} overdue` : null,
       badgeColor: 'rose',
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN'],
+      allowedRoles: ['ADMIN'],
     },
     {
       id: 'audit',
@@ -87,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
       label: 'Murojaatlar (HelpDesk)',
       icon: HelpCircle,
       badge: null,
-      allowedRoles: ['DIRECTOR', 'HEAD', 'ADMIN', 'WORKER', 'USER'],
+      allowedRoles: ['DIRECTOR', 'ADMIN', 'WORKER'],
     },
   ];
 
@@ -100,11 +102,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
         </div>
 
         {navItems.map((item) => {
-          const isAllowed = item.allowedRoles.includes(currentUser.role);
+          const isAllowed = canAccessView(item.id, currentUser.role, permissions);
+          if (!isAllowed) return null;
           const isActive = activeView === item.id;
           const Icon = item.icon;
-
-          if (!isAllowed) return null;
 
           return (
             <button

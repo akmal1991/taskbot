@@ -1,2 +1,3 @@
 - [Bun lockfile compatibility](bun-lockfile-compatibility.md) — Replit's configured Bun may reject imported lockfiles written by a newer release.
-- [Post-merge build budget](post-merge-build-budget.md) — Tailwind's production build takes about 170 seconds here; allow at least 240 seconds for post-merge setup.
+- [Tailwind scan boundaries](post-merge-build-budget.md) — workspace-wide scanning caused multi-minute builds; keep scanning limited to actual UI sources.
+- [Runtime tool availability](runtime-tool-availability.md) — declared Node modules do not guarantee node/node-gyp are available in package lifecycle scripts.

@@ -1,4 +1,4 @@
-import { Task, WorkPlanSection } from '../types';
+import { LegacyTask, WorkPlanSection } from '../types';
 
 export const OFFICIAL_SECTIONS: WorkPlanSection[] = [
   {
@@ -51,7 +51,7 @@ export const OFFICIAL_SECTIONS: WorkPlanSection[] = [
   }
 ];
 
-export const OFFICIAL_92_TASKS: Task[] = [
+export const OFFICIAL_92_TASKS: LegacyTask[] = [
   {
     "id": "task-01",
     "itemNumber": 1,

@@ -23,6 +23,7 @@ export const syncDocumentLanguage = (value: unknown): Language => {
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.lang = language;
     document.documentElement.dir = 'ltr';
+    document.title = `UniTask | ${localizeText('University work plans', language)}`;
   }
   return language;
 };
@@ -118,10 +119,8 @@ const dataLabelTranslations: Record<string, Partial<Record<Language, string>>> =
   MEDIUM: { 'uz-Latn': "O'rtacha", 'uz-Cyrl': 'Ўртача', en: 'Medium', ru: 'Средний' },
   LOW: { 'uz-Latn': 'Past', 'uz-Cyrl': 'Паст', en: 'Low', ru: 'Низкий' },
   DIRECTOR: { 'uz-Latn': 'Rektor', 'uz-Cyrl': 'Ректор', en: 'Director', ru: 'Ректор' },
-  HEAD: { 'uz-Latn': "Bo'lim boshlig'i", 'uz-Cyrl': 'Бўлим бошлиғи', en: 'Department head', ru: 'Руководитель отдела' },
   ADMIN: { 'uz-Latn': 'Tizim administratori', 'uz-Cyrl': 'Тизим администратори', en: 'Administrator', ru: 'Администратор' },
   WORKER: { 'uz-Latn': 'Xodim', 'uz-Cyrl': 'Ходим', en: 'Staff member', ru: 'Сотрудник' },
-  USER: { 'uz-Latn': 'Murojaatchi', 'uz-Cyrl': 'Мурожаатчи', en: 'Applicant', ru: 'Заявитель' },
   'Tizim Xavfsizligi': { 'uz-Latn': 'Tizim xavfsizligi', 'uz-Cyrl': 'Тизим хавфсизлиги', en: 'System security', ru: 'Безопасность системы' },
   'Admin Konsoli': { 'uz-Latn': 'Admin konsoli', 'uz-Cyrl': 'Админ консоли', en: 'Admin console', ru: 'Консоль администратора' },
   'Boshqaruv Paneli': { 'uz-Latn': 'Boshqaruv paneli', 'uz-Cyrl': 'Бошқарув панели', en: 'Dashboard', ru: 'Панель управления' },
@@ -202,6 +201,18 @@ const isMachineValue = (value: string) =>
 const preserveUntranslatedEnglishData = (value: string) =>
   /^[A-Za-z][A-Za-z '-]*$/.test(value.trim());
 
+let translationAliases: Map<string, string> | undefined;
+const canonicalTranslationKey = (key: string) => {
+  if (interfaceTranslations[key] || dataLabelTranslations[key]) return key;
+  if (!translationAliases) {
+    translationAliases = new Map();
+    for (const [source, values] of [...Object.entries(interfaceTranslations), ...Object.entries(dataLabelTranslations)]) {
+      for (const text of Object.values(values)) if (text) translationAliases.set(normalizeKey(text), source);
+      if (values['uz-Latn']) translationAliases.set(normalizeKey(toUzbekCyrillic(values['uz-Latn'])), source);
+    }
+  }
+  return translationAliases.get(key) || key;
+};
 export const localizeText = (input: string, selectedLanguage?: unknown): string => {
   if (!input) return input;
   const language = normalizeLanguage(
@@ -210,8 +221,28 @@ export const localizeText = (input: string, selectedLanguage?: unknown): string 
   );
   const leading = input.match(/^\s*/)?.[0] ?? '';
   const trailing = input.match(/\s*$/)?.[0] ?? '';
-  const key = normalizeKey(input);
+  if (input.includes('\n')) return input.split('\n').map(line => localizeText(line, language)).join('\n');
+  const key = canonicalTranslationKey(normalizeKey(input));
   if (!key) return input;
+  const rowError = key.match(/^(?:Qator|Row) (\d+): (.+)$/);
+  if (rowError) {
+    const label = language === 'en' ? 'Row' : language === 'ru' ? 'Строка' : language === 'uz-Cyrl' ? 'Қатор' : 'Qator';
+    return `${label} ${rowError[1]}: ${localizeText(rowError[2], language)}`;
+  }
+  const dynamicErrors: [RegExp, Record<Language, string>][] = [
+    [/^New task assigned: (.*)\. Deadline: (\d{4}-\d{2}-\d{2})$/, {en:'New task assigned: $1. Deadline: $2',ru:'Назначено новое задание: $1. Срок: $2','uz-Latn':'Yangi topshiriq tayinlandi: $1. Muddat: $2','uz-Cyrl':'Янги топшириқ тайинланди: $1. Муддат: $2'}],
+    [/^New task assigned: (.*)\.$/, {en:'New task assigned: $1.',ru:'Назначено новое задание: $1.','uz-Latn':'Yangi topshiriq tayinlandi: $1.','uz-Cyrl':'Янги топшириқ тайинланди: $1.'}],
+    [/^(.*): deadline (\d{4}-\d{2}-\d{2})$/, {en:'$1: deadline $2',ru:'$1: срок $2','uz-Latn':'$1: muddat $2','uz-Cyrl':'$1: муддат $2'}],
+    [/^Bo'lim "(.*)" topilmadi\.$/, { en:'Department "$1" was not found.',ru:'Подразделение «$1» не найдено.','uz-Latn':'Bo‘linma "$1" topilmadi.','uz-Cyrl':'Бўлинма «$1» топилмади.' }],
+    [/^Mas'ul xodim "(.*)" topilmadi\.$/, { en:'Assignee "$1" was not found.',ru:'Исполнитель «$1» не найден.','uz-Latn':'Ijrochi "$1" topilmadi.','uz-Cyrl':'Ижрочи «$1» топилмади.' }],
+    [/^Muhimlik darajasi noto'g'ri: (.*)\.$/, { en:'Invalid priority: $1.',ru:'Неверный приоритет: $1.','uz-Latn':'Muhimlik darajasi noto‘g‘ri: $1.','uz-Cyrl':'Муҳимлик даражаси нотўғри: $1.' }],
+    [/^Takroriy topshiriq raqami: (.*)\.$/, { en:'Duplicate task number: $1.',ru:'Повторный номер задания: $1.','uz-Latn':'Takroriy topshiriq raqami: $1.','uz-Cyrl':'Такрорий топшириқ рақами: $1.' }],
+    [/^Task number (.*) already exists\.$/, { en:'Task number $1 already exists.',ru:'Задание с номером $1 уже существует.','uz-Latn':'$1 raqamli topshiriq avval mavjud.','uz-Cyrl':'$1 рақамли топшириқ аввал мавжуд.' }],
+  ];
+  for (const [pattern, translations] of dynamicErrors) {
+    const match = key.match(pattern);
+    if (match) return translations[language].replace(/\$(\d+)/g, (_, number) => localizeText(match[Number(number)] || '', language));
+  }
 
   const shortNarrative = key.match(
     /^Matnli xulosa kamida 20 belgidan iborat bo'lishi shart! \(Hozir: (\d+) ta\)$/,
@@ -266,7 +297,9 @@ export const localizeText = (input: string, selectedLanguage?: unknown): string 
 
   const domainTranslation = dataLabelTranslations[key]?.[language];
   if (domainTranslation) return `${leading}${domainTranslation}${trailing}`;
-  if (isMachineValue(key)) return input;
+  const entry = interfaceTranslations[key];
+  const semanticMachineKey = entry && [entry.en,entry.ru,entry['uz-Latn']].some(value => value && normalizeKey(value) !== key);
+  if (isMachineValue(key) && !semanticMachineKey) return input;
 
   if (language === 'uz-Latn') {
     const translated = interfaceTranslations[key]?.['uz-Latn'] ?? toUzbekLatin(key);

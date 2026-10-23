@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "9wJjDRJQ0cfxsqfIt_QWy"
+uri = "file://docs/audit-report.md"
+type = "text"
+title = "UniTaskBot audit report"
+description = "Implemented fixes, 56 passing tests, verification results, and remaining setup and limitations."
+logical_id = "f02aff5a-e50c-4e91-bdbd-0b9f6b6a0632"
+content_hash = "sha256:46c0341be75f3cd42ac98904f7704a4768e701fa122e9d62f231abe6b516524f"
+size = 7817
+mtime_ms = 1792752676183
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:b85c4b44-f1ff-40fa-a850-071b99cb8dce/f02aff5a-e50c-4e91-bdbd-0b9f6b6a0632/5636fbfc-b662-42ff-85ff-bf5df0cbe5b5"
+storage_version_token = "1792752692195561"
+content_type = "text/markdown"

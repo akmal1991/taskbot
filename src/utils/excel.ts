@@ -14,13 +14,13 @@ export function canApplyExcelImport(report: ImportReport | null, previewTasks: P
   return Boolean(report && report.errors.length === 0 && previewTasks.length > 0);
 }
 
-export function commitExcelImportIfValid(
+export async function commitExcelImportIfValid(
   report: ImportReport | null,
   previewTasks: Partial<Task>[],
-  commitTasks: (tasks: Partial<Task>[]) => void
-): boolean {
+  commitTasks: (tasks: Partial<Task>[]) => void | Promise<void>
+): Promise<boolean> {
   if (!canApplyExcelImport(report, previewTasks)) return false;
-  commitTasks(previewTasks);
+  await commitTasks(previewTasks);
   return true;
 }
 
@@ -51,6 +51,11 @@ export function parseExcelWorkbook(
     return report;
   }
 
+  if (rawRows.length > 2000) {
+    report.errors.push('Import files must contain no more than 2,000 rows.');
+    return report;
+  }
+  const taskNumbers = new Set<string>();
   let rowIndex = 2;
   for (const row of rawRows) {
     const title = row["Иш режа номи"] || row["Title"] || row["title"] || row["Sarlavha"] || row["Topshiriq nomi"] || row["Nomi"];
@@ -61,38 +66,42 @@ export function parseExcelWorkbook(
       continue;
     }
 
-    const itemNum = Number(row["Т/р"]) || rowIndex - 1;
-    const publicCode = `TT-2026-${String(itemNum).padStart(2, '0')}`;
+    const itemNum = Number(row["Т/р"] || row["Number"]);
+    const explicitCode = String(row["Plan Code"] || row["planCode"] || '').trim();
+    if (!explicitCode && (!Number.isInteger(itemNum) || itemNum <= 0)) {
+      report.errors.push(`Qator ${rowIndex}: Topshiriq raqami majburiy va musbat butun son bo'lishi kerak.`);
+      report.skipped++; rowIndex++; continue;
+    }
+    const publicCode = explicitCode || `TT-2026-${String(itemNum).padStart(2, '0')}`;
+    if (taskNumbers.has(publicCode)) {
+      report.errors.push(`Qator ${rowIndex}: Takroriy topshiriq raqami: ${publicCode}.`);
+      report.skipped++; rowIndex++; continue;
+    }
+    taskNumbers.add(publicCode);
     const description = row["Амалга ошириш механизми"] || row["Description"] || row["Tavsif"] || "";
     const funding = row["Молиялаштириш манбалари"] || row["Funding"] || "Университет маблағлари";
-    const approver = row["Назорат (Проректор)"] || row["Назорат"] || "Ўқув ишлари бўйича проректор (А.Рустамов)";
+    const approver = String(row["Назорат (Проректор)"] || row["Назорат"] || row["Approver"] || '').trim();
     const sectionTitle = row["Бўлим (Йўналиш)"] || row["Бўлим"] || "Умумий йўналиш";
 
     const deptNameRaw = row["Масъул бўлим"] || row["Department"] || row["Bo'lim"] || "";
     const normalizedDepartmentName = String(deptNameRaw).toLowerCase().trim();
-    const dept = normalizedDepartmentName
-      ? departments.find(d =>
-        d.name.toLowerCase().includes(normalizedDepartmentName) ||
-        normalizedDepartmentName.includes(d.name.toLowerCase().trim())
-      )
-      : departments[0];
+    const deptMatches = departments.filter(d => [d.name, d.id, d.code].some(v => v.toLowerCase().trim() === normalizedDepartmentName));
+    const dept = deptMatches.length === 1 ? deptMatches[0] : undefined;
 
     const workerNameRaw = row["Ижро учун масъул"] || row["Primary Responsible (full name)"] || row["Xodim"] || "";
     const normalizedWorkerName = String(workerNameRaw).toLowerCase().trim();
-    const worker = normalizedWorkerName
-      ? users.find(u =>
-        u.fullName.toLowerCase().includes(normalizedWorkerName) ||
-        normalizedWorkerName.includes(u.fullName.toLowerCase().trim())
-      )
-      : users.find(u => u.role === 'WORKER') || users[0];
+    const workerMatches = users.filter(u => [u.fullName, u.id, u.email, u.username || ''].some(v => v && v.toLowerCase().trim() === normalizedWorkerName));
+    const worker = workerMatches.length === 1 ? workerMatches[0] : undefined;
 
-    const priorityRaw = String(row["Муҳимлик даражаси"] || row["Priority"] || "HIGH").toUpperCase().trim();
-    let priority: Task['priority'] = 'HIGH';
-    if (['CRITICAL', 'JUDAYUQORI'].includes(priorityRaw)) priority = 'CRITICAL';
-    else if (['MEDIUM', 'O\'RTACHA'].includes(priorityRaw)) priority = 'MEDIUM';
-    else if (['LOW', 'PAST'].includes(priorityRaw)) priority = 'LOW';
+    const priorityRaw = String(row["Муҳимлик даражаси"] || row["Priority"] || '').toUpperCase().trim();
+    const priorityAliases: Record<string, Task['priority']> = { CRITICAL: 'CRITICAL', JUDAYUQORI: 'CRITICAL', HIGH: 'HIGH', YUQORI: 'HIGH', MEDIUM: 'MEDIUM', "O'RTACHA": 'MEDIUM', LOW: 'LOW', PAST: 'LOW' };
+    const priority = priorityAliases[priorityRaw];
+    if (!priority) {
+      report.errors.push(`Qator ${rowIndex}: Muhimlik darajasi noto'g'ri: ${priorityRaw || '—'}.`);
+      report.skipped++; rowIndex++; continue;
+    }
 
-    let deadlineStr = '2027-06-30';
+    let deadlineStr = '';
     const deadlineRaw = row["Бажариш муддати"] || row["Deadline"] || row["Muddat"];
     if (deadlineRaw) {
       if (typeof deadlineRaw === 'number') {
@@ -115,6 +124,27 @@ export function parseExcelWorkbook(
       }
     }
 
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(deadlineStr) || !Number.isFinite(Date.parse(deadlineStr)) || new Date(deadlineStr).toISOString().slice(0,10) !== deadlineStr) {
+      report.errors.push(`Qator ${rowIndex}: Bajarish muddati YYYY-MM-DD formatida bo'lishi shart.`);
+      report.skipped++; rowIndex++; continue;
+    }
+    const rawProgress = row["Ижро фоизи %"] ?? row["Progress"] ?? 0;
+    const progress = Number(rawProgress);
+    if (!Number.isInteger(progress) || progress < 0 || progress > 100) {
+      report.errors.push(`Qator ${rowIndex}: Ijro foizi 0 dan 100 gacha butun son bo'lishi shart.`);
+      report.skipped++; rowIndex++; continue;
+    }
+    const status = String(row["Ҳолати (Status)"] || row["Status"] || 'ASSIGNED').toUpperCase().trim();
+    if (progress !== 0 || status !== 'ASSIGNED') {
+      report.errors.push(`Qator ${rowIndex}: Tarixiy holat va ijro foizini saqlash uchun tekshirilgan JSON migratsiyasidan foydalaning.`);
+      report.skipped++; rowIndex++; continue;
+    }
+    const reviewerMatches = approver ? users.filter(u => [u.fullName,u.id,u.email].some(v => v.toLowerCase() === approver.toLowerCase())) : [];
+    const reviewer = reviewerMatches.length === 1 ? reviewerMatches[0] : undefined;
+    if (approver && (!reviewer || !['ADMIN','DIRECTOR'].includes(reviewer.role) || reviewer.id === worker?.id)) {
+      report.errors.push(`Qator ${rowIndex}: Nazoratchi topilmadi yoki tasdiqlash vakolatiga ega emas.`);
+      report.skipped++; rowIndex++; continue;
+    }
     if (!dept || !worker) {
       if (!dept) report.errors.push(`Qator ${rowIndex}: Bo'lim "${deptNameRaw}" topilmadi.`);
       if (!worker) report.errors.push(`Qator ${rowIndex}: Mas'ul xodim "${workerNameRaw}" topilmadi.`);
@@ -125,7 +155,7 @@ export function parseExcelWorkbook(
 
     const parsedTask: Partial<Task> = {
       id: `imported-${Date.now()}-${rowIndex}`,
-      itemNumber: itemNum,
+      itemNumber: Number.isInteger(itemNum) ? itemNum : undefined,
       planCode: publicCode,
       title: String(title).trim(),
       description: String(description).trim(),
@@ -141,13 +171,11 @@ export function parseExcelWorkbook(
       assignedToName: worker.fullName,
       assignedToTelegramId: worker.telegramId,
       assignedToTelegramUsername: worker.telegramUsername,
-      createdById: users[0]?.id || 'user-director',
-      createdByName: users[0]?.fullName || 'Prof. Rustam O. Xoliqov',
-      approverId: 'user-rustamov',
-      approverName: approver,
+      approverId: reviewer?.id || '',
+      approverName: reviewer?.fullName || '',
       assignedDate: new Date().toISOString().split('T')[0],
       deadline: deadlineStr,
-      progressPercent: Number(row["Ижро фоизи %"]) || 0,
+      progressPercent: progress,
       proofs: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -180,7 +208,9 @@ export const OFFICIAL_WORK_PLAN_COLUMNS = [
 /**
  * Builds and downloads the official ToshTech 2026-2027 Excel work plan file (.xlsx) with all 92 tasks
  */
-export function exportTasksToExcel(tasks: Task[], fileName: string = 'ToshTech_ish_reja_2026_2027_.xlsx') {
+export const safeSpreadsheetValue = (value: string | number) =>
+  typeof value === 'string' && /^[\s]*[=+\-@]/.test(value) ? `'${value}` : value;
+export function exportTasksToExcel(tasks: Task[], fileName: string = `UniTask_work_plan_${new Date().toISOString().slice(0,10)}.xlsx`) {
   const data = tasks.map((t, idx) => {
     return {
       "Т/р": t.itemNumber || (idx + 1),
@@ -199,7 +229,8 @@ export function exportTasksToExcel(tasks: Task[], fileName: string = 'ToshTech_i
     };
   });
 
-  const worksheet = XLSX.utils.json_to_sheet(data);
+  const safeData = data.map(row => Object.fromEntries(Object.entries(row).map(([key,value]) => [key,safeSpreadsheetValue(value)])));
+  const worksheet = XLSX.utils.json_to_sheet(safeData);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "ToshTech_2026_2027_Ish_Rejasi");
 
@@ -249,7 +280,7 @@ export function exportTasksToCsv(tasks: Task[], fileName: string = 'ToshTech_ish
 
   const escapeCsv = (val: string | number | undefined | null): string => {
     if (val === undefined || val === null) return '""';
-    const str = String(val).replace(/"/g, '""');
+    const str = String(safeSpreadsheetValue(val)).replace(/"/g, '""');
     return `"${str}"`;
   };
 

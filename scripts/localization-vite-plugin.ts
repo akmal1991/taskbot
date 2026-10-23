@@ -72,6 +72,12 @@ export const localizationVitePlugin = (): Plugin => ({
 
     const checkExpressionLiterals = (node: any) => {
       if (!node || typeof node !== 'object') return;
+      // Internal state comparisons are not visible text. Validate only rendered branches.
+      if (['BinaryExpression','UnaryExpression'].includes(node.type)) return;
+      if (node.type === 'ConditionalExpression') {
+        checkExpressionLiterals(node.consequent); checkExpressionLiterals(node.alternate); return;
+      }
+      if (node.type === 'LogicalExpression') { checkExpressionLiterals(node.right); return; }
       if (node.type === 'StringLiteral') checkCatalog(node.value);
       if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
         checkCatalog(node.quasis[0]?.value?.cooked ?? '');

@@ -1,6 +1,6 @@
 // @ts-nocheck Bun supplies this test module at runtime; it is not a browser dependency.
 import { describe, expect, it } from 'bun:test';
-import { loadAppData, saveAppData } from './appStorage';
+import { readLanguagePreference, saveLanguagePreference } from './preferences';
 import { interfaceTranslations } from './interfaceTranslations';
 import {
   localizeText,
@@ -75,46 +75,30 @@ describe('language selection and script handling', () => {
       expect(translations['uz-Latn'], source).toBeTruthy();
     }
   });
+  it('retranslates already displayed notices and API errors after a language switch', () => {
+    const uzbek = localizeText('Invalid credentials or account unavailable.','uz-Latn');
+    expect(localizeText(uzbek,'en')).toBe('Invalid credentials or account unavailable.');
+    const cyrillic = localizeText('This task changed on another device. Reload it before saving.','uz-Cyrl');
+    expect(localizeText(cyrillic,'uz-Latn')).not.toMatch(/[А-Яа-яЁёҚқҒғЎўҲҳ]/);
+    expect(localizeText('Row 2: Choose an active assignee.','ru')).toBe('Строка 2: Выберите активного исполнителя.');
+    expect(localizeText('New task assigned: Task 12. Deadline: 2028-12-31','uz-Cyrl')).not.toMatch(/Deadline|New task/);
+    expect(localizeText('DEADLINE_WARNING_2H','uz-Latn')).toBe('Muddat eslatmasi');
+  });
 });
 
 describe('language persistence', () => {
-  it('persists the selected language and migrates legacy or invalid locale values without discarding data', () => {
-    const previousWindow = globalThis.window;
-    const values = new Map<string, string>();
-    const localStorageMock = {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
-    };
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { localStorage: localStorageMock },
-    });
-
-    try {
-      const initial = loadAppData();
-      saveAppData({ ...initial, language: 'uz-Cyrl' });
-      expect(loadAppData().language).toBe('uz-Cyrl');
-
-      const stored = JSON.parse(values.get('unitask_app_data_v1') as string);
-      stored.language = 'uz_cyrl';
-      values.set('unitask_app_data_v1', JSON.stringify(stored));
-      const migrated = loadAppData();
-      expect(migrated.language).toBe('uz-Cyrl');
-      expect(migrated.tasks).toHaveLength(initial.tasks.length);
-      expect(migrated.storageStatus).toBe('saved');
-
-      stored.language = 'not-a-locale';
-      values.set('unitask_app_data_v1', JSON.stringify(stored));
-      const recovered = loadAppData();
-      expect(recovered.language).toBe('uz-Latn');
-      expect(recovered.tasks).toHaveLength(initial.tasks.length);
-      expect(recovered.storageStatus).toBe('saved');
-    } finally {
-      if (previousWindow) {
-        Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow });
-      } else {
-        Reflect.deleteProperty(globalThis, 'window');
-      }
-    }
+  it('stores only the language preference without altering legacy records or identity', () => {
+    const values = new Map([['unitask_app_data_v1','unchanged original records']]);
+    const storage = { getItem: key => values.get(key) ?? null, setItem: (key,value) => values.set(key,value) };
+    saveLanguagePreference('uz-Cyrl',storage); expect(readLanguagePreference(storage)).toBe('uz-Cyrl');
+    values.set('unitask_language','uz_latn'); expect(readLanguagePreference(storage)).toBe('uz-Latn');
+    values.set('unitask_language','invalid'); expect(readLanguagePreference(storage)).toBe('uz-Latn');
+    expect(values.get('unitask_app_data_v1')).toBe('unchanged original records');
+    expect([...values.keys()]).toEqual(['unitask_app_data_v1','unitask_language']);
+  });
+  it('still switches language when optional preference storage is blocked', () => {
+    const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+    expect(saveLanguagePreference('uz-Cyrl',blocked)).toBe('uz-Cyrl');
+    expect(readLanguagePreference(blocked)).toBe('uz-Latn');
   });
 });

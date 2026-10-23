@@ -1,4 +1,4 @@
-import { Department, User, Task, AuditLog, QueueJob, TelegramNotification, ServiceDeskTicket, WorkPlanSection } from '../types';
+import { Department, User, LegacyTask, AuditLog, QueueJob, TelegramNotification, ServiceDeskTicket, WorkPlanSection } from '../types';
 import { OFFICIAL_92_TASKS, OFFICIAL_SECTIONS } from './officialTasks92';
 
 export { OFFICIAL_SECTIONS };
@@ -105,7 +105,9 @@ export const INITIAL_DEPARTMENTS: Department[] = [
   }
 ];
 
-export const INITIAL_USERS: User[] = [
+// Archival source only. Legacy roles must be reviewed individually during migration.
+// These records are never used as application identity or seeded automatically.
+export const INITIAL_USERS: (Omit<User, 'role'> & { role: string })[] = [
   {
     id: 'user-director',
     telegramId: '123456789',
@@ -257,7 +259,7 @@ export const INITIAL_USERS: User[] = [
   }
 ];
 
-export const INITIAL_TASKS: Task[] = OFFICIAL_92_TASKS;
+export const INITIAL_TASKS: LegacyTask[] = OFFICIAL_92_TASKS;
 
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   {

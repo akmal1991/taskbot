@@ -1,13 +1,11 @@
-export type UserRole = 'DIRECTOR' | 'HEAD' | 'ADMIN' | 'WORKER' | 'USER';
+export type UserRole = 'ADMIN' | 'DIRECTOR' | 'WORKER';
 
 export type TaskStatus = 
   | 'PENDING' 
   | 'ASSIGNED'
   | 'IN_PROGRESS' 
   | 'SUBMITTED_FOR_REVIEW' 
-  | 'COMPLETED' 
-  | 'REJECTED' 
-  | 'OVERDUE';
+  | 'COMPLETED';
 
 export type Priority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -16,6 +14,8 @@ export type ProofType = 'IMAGE' | 'DOCUMENT' | 'TEXT_NOTE' | 'URL';
 export type Language = 'uz-Latn' | 'uz-Cyrl' | 'ru' | 'en';
 
 export interface Department {
+  active?: boolean;
+  coordinatorId?: string;
   id: string;
   code: string;
   name: string;
@@ -28,6 +28,8 @@ export interface Department {
 }
 
 export interface User {
+  username?: string;
+  active?: boolean;
   id: string;
   telegramId?: string;
   telegramUsername?: string;
@@ -44,6 +46,7 @@ export interface User {
 }
 
 export interface TaskProof {
+  attachmentId?: string;
   id: string;
   taskId: string;
   type: ProofType;
@@ -62,6 +65,7 @@ export interface TaskProof {
 }
 
 export interface WorkPlanSection {
+  workPlanId?: string;
   id: string;
   number: string;
   title: string;
@@ -84,6 +88,15 @@ export interface TaskComment {
 }
 
 export interface Task {
+  version?: number;
+  archivedAt?: string;
+  draft?: boolean;
+  isOverdue?: boolean;
+  workPlanId?: string;
+  categoryId?: string;
+  requiresEvidence?: boolean;
+  requiresApproval?: boolean;
+  dependsOnIds?: string[];
   id: string;
   itemNumber?: number; // 1 to 92
   planCode: string; // e.g., TT-2026-01 from ToshTech Excel Plan
@@ -118,13 +131,15 @@ export interface Task {
   isClockedIn?: boolean;
   clockedInAt?: string;
 }
+/** Original imported source format. Never used as authenticated application state. */
+export type LegacyTask = Omit<Task, 'status'> & { status: string };
 
 export interface AuditLog {
   id: string;
   action: string;
   actorId: string;
   actorName: string;
-  actorRole: UserRole;
+  actorRole: string;
   targetId?: string;
   details: string;
   ipAddress: string;
@@ -134,7 +149,7 @@ export interface AuditLog {
 export interface QueueJob {
   id: string;
   name: string;
-  queue: 'task_dispatch' | 'daily_digest' | 'deadline_escalation' | 'proof_review' | 'overdue_monitor';
+  queue: 'task_dispatch' | 'daily_digest' | 'deadline_escalation' | 'proof_review' | 'overdue_monitor' | 'CRON_SCHEDULER' | 'TELEGRAM_SENDER';
   status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'DELAYED';
   scheduledTime: string;
   lastRun?: string;

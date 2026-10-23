@@ -1,10 +1,10 @@
 ---
-name: Post-merge build budget
-description: Time budget needed for the production build in this workspace.
+name: Tailwind scan boundaries
+description: Why build timeouts were misleading and how to avoid workspace-wide Tailwind scans.
 ---
 
-The production Vite build takes about 170 seconds in this workspace because the Tailwind build transform dominates.
+Keep Tailwind scanning limited to application UI sources, including any deliberately added UI directories.
 
-**Why:** A 180-second post-merge timeout left too little margin; a 240-second timeout allowed the same setup to complete successfully.
+**Why:** Automatic workspace scanning previously took approximately 170–325 seconds and delayed the first preview load. Restricting scanning to actual UI sources reduced production builds to approximately 3–4 seconds. The earlier long-timeout recommendation is no longer needed for this cause.
 
-**How to apply:** Keep post-merge setup timeouts at 240 seconds or more while the production build duration remains similar. Check the build error before concluding a setup failure was caused by the timeout.
+**How to apply:** Do not restore workspace-wide scanning when adding artifacts or dependencies. Extend explicit sources when UI moves outside existing directories. Inspect scan scope and actual build errors before increasing post-merge timeouts.

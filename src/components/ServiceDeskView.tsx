@@ -30,17 +30,17 @@ export const ServiceDeskView: React.FC = () => {
   const [applicantEmail, setApplicantEmail] = useState(currentUser.email);
   const [applicantPhone, setApplicantPhone] = useState(currentUser.phone);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !description.trim()) return;
 
-    const dept = departments.find(d => d.id === departmentId) || departments[0];
+    const dept = departments.find(d => d.id === departmentId);
     if (!dept) {
       setFormError('Murojaat yuborish uchun bo‘lim mavjud emas.');
       return;
     }
 
-    createTicket({
+    try { await createTicket({
       title: title.trim(),
       description: description.trim(),
       departmentId: dept.id,
@@ -49,17 +49,17 @@ export const ServiceDeskView: React.FC = () => {
       applicantEmail,
       applicantPhone,
       priority,
-    });
+    }); } catch { return; }
 
     setIsModalOpen(false);
     setTitle('');
     setDescription('');
   };
 
-  const handleResolve = (e: React.FormEvent) => {
+  const handleResolve = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTicket || !responseNote.trim()) return;
-    resolveTicket(selectedTicket.id, responseNote.trim());
+    try { await resolveTicket(selectedTicket.id, responseNote.trim()); } catch { return; }
     setSelectedTicket(null);
     setResponseNote('');
   };
@@ -140,7 +140,7 @@ export const ServiceDeskView: React.FC = () => {
                 </div>
               )}
 
-              {ticket.status !== 'RESOLVED' && ['DIRECTOR', 'HEAD', 'ADMIN'].includes(currentUser.role) && (
+              {ticket.status !== 'RESOLVED' && ['DIRECTOR', 'ADMIN'].includes(currentUser.role) && (
                 <button
                   onClick={() => setSelectedTicket(ticket)}
                   className="w-full mt-2 py-1.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-lg transition-colors text-center"
@@ -220,7 +220,7 @@ export const ServiceDeskView: React.FC = () => {
                     type="text"
                     required
                     value={applicantName}
-                    onChange={(e) => setApplicantName(e.target.value)}
+                    readOnly
                     className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg"
                   />
                 </div>
@@ -228,9 +228,8 @@ export const ServiceDeskView: React.FC = () => {
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Telefon Raqami</label>
                   <input
                     type="text"
-                    required
                     value={applicantPhone}
-                    onChange={(e) => setApplicantPhone(e.target.value)}
+                    readOnly
                     className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg font-mono"
                   />
                 </div>

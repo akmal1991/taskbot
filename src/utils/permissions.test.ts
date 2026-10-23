@@ -1,17 +1,23 @@
 // @ts-nocheck
 import { describe, expect, it } from 'bun:test';
 import { canAccessView } from './permissions';
-
-describe('view permissions used by navigation', () => {
-  it('keeps dashboard and service desk available to every role', () => {
-    expect(canAccessView('dashboard', 'USER')).toBe(true);
-    expect(canAccessView('servicedesk', 'WORKER')).toBe(true);
+import { ROLES, effectivePermissions, ROLE_CEILINGS } from '../../shared/policy';
+describe('fixed role and navigation policy', () => {
+  it('defines exactly three roles and never grants a role-switching path', () => {
+    expect(ROLES).toEqual(['ADMIN','DIRECTOR','WORKER']);
+    expect(canAccessView('admin','HEAD')).toBe(false);
+    expect(canAccessView('dashboard','USER')).toBe(false);
   });
-
-  it('does not expose restricted task, review, or scheduler navigation', () => {
-    expect(canAccessView('tasks', 'USER')).toBe(false);
-    expect(canAccessView('proofs', 'WORKER')).toBe(false);
-    expect(canAccessView('scheduler', 'USER')).toBe(false);
-    expect(canAccessView('scheduler', 'HEAD')).toBe(true);
+  it('keeps operational navigation separate from security administration', () => {
+    expect(canAccessView('tasks','DIRECTOR')).toBe(true);
+    expect(canAccessView('proofs','WORKER')).toBe(false);
+    for (const view of ['users','admin','excel','scheduler']) expect(canAccessView(view,'DIRECTOR')).toBe(false);
+    expect(canAccessView('admin','ADMIN')).toBe(true);
+  });
+  it('enforces permission ceilings even for corrupt configuration', () => {
+    expect(effectivePermissions('WORKER',['users.manage','tasks.submit'])).toEqual(['tasks.submit']);
+    expect(effectivePermissions('DIRECTOR',['roles.manage'])).toEqual([]);
+    expect(effectivePermissions('ADMIN',[])).toEqual([...ROLE_CEILINGS.ADMIN]);
+    expect(canAccessView('proofs','DIRECTOR',[])).toBe(false);
   });
 });

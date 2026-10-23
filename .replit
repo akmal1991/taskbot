@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "bun-1.3", "python-base-3.13"]
+modules = ["nodejs-24", "bun-1.3", "python-base-3.13", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 
@@ -36,6 +36,10 @@ externalPort = 80
 [[ports]]
 localPort = 5001
 externalPort = 3000
+
+[[ports]]
+localPort = 5002
+externalPort = 3002
 
 [postMerge]
 path = "scripts/post-merge.sh"

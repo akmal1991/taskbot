@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Task, Priority, TaskStatus, TaskComment } from '../types';
 import { exportTasksToExcel, exportTasksToCsv } from '../utils/excel';
-import { OFFICIAL_SECTIONS } from '../data/mockData';
 import { 
   Plus, 
   Search, 
@@ -149,7 +148,7 @@ export function calculateDeadlineInfo(deadlineStr: string, status: TaskStatus) {
   const diffMs = target.getTime() - today.getTime();
   const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-  if (daysLeft < 0 || status === 'OVERDUE') {
+  if (daysLeft < 0) {
     return {
       daysLeft,
       urgency: 'OVERDUE' as const,
@@ -212,8 +211,6 @@ const getRoleBadgeStyle = (role: string) => {
   switch (role) {
     case 'DIRECTOR':
       return 'bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-800/40';
-    case 'HEAD':
-      return 'bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800/40';
     case 'ADMIN':
       return 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/40';
     case 'WORKER':
@@ -227,8 +224,6 @@ const getRoleInitialColor = (role: string) => {
   switch (role) {
     case 'DIRECTOR':
       return 'bg-purple-600 text-white';
-    case 'HEAD':
-      return 'bg-blue-600 text-white';
     case 'ADMIN':
       return 'bg-amber-600 text-white';
     case 'WORKER':
@@ -245,7 +240,9 @@ const countTotalComments = (task: Task): number => {
 
 export const TaskRegister: React.FC = () => {
   const { 
-    tasks, 
+    tasks: allTasks,
+    sections: OFFICIAL_SECTIONS,
+    permissions,
     departments, 
     users, 
     currentUser, 
@@ -256,6 +253,7 @@ export const TaskRegister: React.FC = () => {
     addTaskComment,
     toggleCommentReaction
   } = useApp();
+  const tasks = allTasks.filter(t => !t.archivedAt && !t.draft);
 
   // View switch: table or drag-and-drop priority board
   const [viewMode, setViewMode] = useState<'table' | 'board'>('table');
@@ -293,7 +291,8 @@ export const TaskRegister: React.FC = () => {
   const [newExpectedOutcome, setNewExpectedOutcome] = useState('');
   const [newFundingSource, setNewFundingSource] = useState('Университет маблағлари');
   const [newDeptId, setNewDeptId] = useState(departments[0]?.id || '');
-  const [newSectionId, setNewSectionId] = useState(OFFICIAL_SECTIONS[0]?.id || 'SEC-1');
+  const [newSectionId, setNewSectionId] = useState(OFFICIAL_SECTIONS[0]?.id || '');
+  const [newApproverId, setNewApproverId] = useState('');
   const [newAssigneeId, setNewAssigneeId] = useState(users.find(u => u.role === 'WORKER')?.id || users[0]?.id || '');
   const [newPriority, setNewPriority] = useState<Priority>('HIGH');
   const [newDeadline, setNewDeadline] = useState('2027-06-30');
@@ -340,13 +339,13 @@ export const TaskRegister: React.FC = () => {
     }
   };
 
-  const handleDrop = (e: React.DragEvent, targetPriority: Priority) => {
+  const handleDrop = async (e: React.DragEvent, targetPriority: Priority) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
     if (taskId) {
       const task = tasks.find(t => t.id === taskId);
       if (task && task.priority !== targetPriority) {
-        updateTask(taskId, { priority: targetPriority });
+        try { await updateTask(taskId, { priority: targetPriority }); } catch { handleDragEnd(); return; }
         showNotification(`«${task.planCode}» топшириғи муҳимлиги ${targetPriority} га ўзгартирилди`);
       }
     }
@@ -355,21 +354,21 @@ export const TaskRegister: React.FC = () => {
   };
 
   // Manual priority reassignment
-  const handlePriorityChange = (taskId: string, newPriority: Priority) => {
+  const handlePriorityChange = async (taskId: string, newPriority: Priority) => {
     const task = tasks.find(t => t.id === taskId);
     if (task && task.priority !== newPriority) {
-      updateTask(taskId, { priority: newPriority });
+      try { await updateTask(taskId, { priority: newPriority }); } catch { return; }
       showNotification(`«${task.planCode}» топшириғи муҳимлиги ${newPriority} га ўзгартирилди`);
     }
   };
 
   // Comment Handlers
-  const handleAddComment = (e: React.FormEvent, taskId: string, parentId?: string) => {
+  const handleAddComment = async (e: React.FormEvent, taskId: string, parentId?: string) => {
     e.preventDefault();
     const text = parentId ? replyText : newCommentText;
     if (!text.trim()) return;
 
-    addTaskComment(taskId, text.trim(), parentId);
+    try { await addTaskComment(taskId, text.trim(), parentId); } catch { return; }
     if (parentId) {
       setReplyText('');
       setReplyingToCommentId(null);
@@ -416,7 +415,7 @@ export const TaskRegister: React.FC = () => {
 
     const matchesDept = selectedDept === 'all' || task.departmentId === selectedDept;
     const matchesSection = selectedSection === 'all' || task.sectionId === selectedSection;
-    const matchesStatus = selectedStatus === 'all' || task.status === selectedStatus;
+    const matchesStatus = selectedStatus === 'all' || (selectedStatus === 'OVERDUE' ? task.isOverdue : task.status === selectedStatus);
     const matchesPriority = selectedPriority === 'all' || task.priority === selectedPriority;
     const matchesApproaching = !filterApproachingOnly || (
       task.status !== 'COMPLETED' && calculateDeadlineInfo(task.deadline, task.status).urgency !== 'NORMAL'
@@ -437,15 +436,16 @@ export const TaskRegister: React.FC = () => {
     showNotification(`${listToExport.length} та топшириқ CSV ҳисобот файли сифатида юклаб олинди`);
   };
 
-  const handleCreateTaskSubmit = (e: React.FormEvent) => {
+  const handleCreateTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    const dept = departments.find(d => d.id === newDeptId) || departments[0];
-    const assignee = users.find(u => u.id === newAssigneeId) || users[0];
-    const sec = OFFICIAL_SECTIONS.find(s => s.id === newSectionId) || OFFICIAL_SECTIONS[0];
+    const dept = departments.find(d => d.id === newDeptId);
+    const assignee = users.find(u => u.id === newAssigneeId);
+    const sec = OFFICIAL_SECTIONS.find(s => s.id === newSectionId);
+    if (!dept || !assignee) return;
 
-    createTask({
+    try { await createTask({
       itemNumber: tasks.length + 1,
       planCode: newPlanCode.trim(),
       title: newTitle.trim(),
@@ -453,8 +453,9 @@ export const TaskRegister: React.FC = () => {
       expectedOutcome: newExpectedOutcome.trim(),
       sourceReference: "2027 йил сентябрь ойига қадар ToshTech техника университети ишлар РЕЖАСИ",
       fundingSource: newFundingSource.trim(),
-      sectionId: sec.id,
-      sectionTitle: sec.title,
+      workPlanId: sec?.workPlanId,
+      sectionId: sec?.id,
+      sectionTitle: sec?.title,
       status: 'ASSIGNED',
       priority: newPriority,
       departmentId: dept.id,
@@ -465,12 +466,12 @@ export const TaskRegister: React.FC = () => {
       assignedToTelegramUsername: assignee.telegramUsername,
       createdById: currentUser.id,
       createdByName: currentUser.fullName,
-      approverId: currentUser.id,
-      approverName: currentUser.fullName,
+      approverId: newApproverId,
+      approverName: users.find(u => u.id === newApproverId)?.fullName || '',
       assignedDate: new Date().toISOString().split('T')[0],
       deadline: newDeadline,
       progressPercent: 0,
-    });
+    }); } catch { return; }
 
     setIsCreateModalOpen(false);
     setNewTitle('');
@@ -480,7 +481,7 @@ export const TaskRegister: React.FC = () => {
     showNotification('Янги топшириқ муваффақиятли рўйхатга олинди');
   };
 
-  const getStatusBadge = (status: TaskStatus) => {
+  const getStatusBadge = (status: string) => {
     switch (status) {
       case 'COMPLETED':
         return <span className="font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/40 px-2 py-0.5 rounded">БАЖАРИЛДИ</span>;
@@ -670,20 +671,12 @@ export const TaskRegister: React.FC = () => {
             </button>
           )}
 
-          <a
-            href="/public/assets/aistudio/ToshTech_ish_reja_2026_2027___2__a172d162.pdf"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-lg shadow-xs transition-colors border border-transparent dark:border-slate-700"
-          >
-            <FileText className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-            <span>Асл PDF</span>
-          </a>
+          <span className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 dark:border-slate-700">Source PDF not available</span>
 
           <button
             onClick={() => exportTasksToExcel(tasks)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
-            title="Барча 92 та расмий топшириқни Excel (.xlsx) форматида юклаб олиш"
+            title="Export tasks"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Excel (.xlsx)</span>
@@ -698,7 +691,7 @@ export const TaskRegister: React.FC = () => {
             <span>CSV Экспорт {isAnyFilterActive ? `(${filteredTasks.length})` : '(.csv)'}</span>
           </button>
 
-          {['DIRECTOR', 'HEAD', 'ADMIN'].includes(currentUser.role) && (
+          {permissions.includes('tasks.create') && (
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
@@ -915,7 +908,7 @@ export const TaskRegister: React.FC = () => {
             { id: 'IN_PROGRESS', label: 'Жараёнда', count: tasks.filter(t => t.status === 'IN_PROGRESS').length },
             { id: 'SUBMITTED_FOR_REVIEW', label: "Кўрикда", count: tasks.filter(t => t.status === 'SUBMITTED_FOR_REVIEW').length },
             { id: 'COMPLETED', label: 'Бажарилди', count: tasks.filter(t => t.status === 'COMPLETED').length },
-            { id: 'OVERDUE', label: "Муддати ўтган", count: tasks.filter(t => t.status === 'OVERDUE').length },
+            { id: 'OVERDUE', label: "Муддати ўтган", count: tasks.filter(t => t.isOverdue).length },
             { id: 'ASSIGNED', label: 'Бириктирилган', count: tasks.filter(t => t.status === 'ASSIGNED').length },
           ].map(tab => (
             <button
@@ -1099,7 +1092,7 @@ export const TaskRegister: React.FC = () => {
                         return (
                           <div
                             key={task.id}
-                            draggable={true}
+                            draggable={permissions.includes('tasks.edit') && task.status !== 'COMPLETED'}
                             onDragStart={(e) => handleDragStart(e, task.id)}
                             onDragEnd={handleDragEnd}
                             onClick={() => setSelectedTaskId(task.id)}
@@ -1169,7 +1162,7 @@ export const TaskRegister: React.FC = () => {
                                 <div 
                                   className={`h-full transition-all ${
                                     task.status === 'COMPLETED' ? 'bg-emerald-500' :
-                                    task.status === 'OVERDUE' ? 'bg-rose-500' : 'bg-sky-500'
+                                    task.isOverdue ? 'bg-rose-500' : 'bg-sky-500'
                                   }`}
                                   style={{ width: `${task.progressPercent}%` }}
                                 />
@@ -1202,6 +1195,7 @@ export const TaskRegister: React.FC = () => {
                               <div className="flex items-center gap-1">
                                 <span className="text-[10px] text-slate-400 dark:text-slate-500">Кўчириш:</span>
                                 <select
+                                  disabled={!permissions.includes('tasks.edit') || task.status === 'COMPLETED'}
                                   value={task.priority}
                                   onChange={(e) => handlePriorityChange(task.id, e.target.value as Priority)}
                                   className="text-[10px] font-mono font-semibold py-0.5 px-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded hover:bg-slate-100 dark:hover:bg-slate-700 focus:outline-none cursor-pointer"
@@ -1318,6 +1312,7 @@ export const TaskRegister: React.FC = () => {
                           {/* Interactive Inline Priority Selector */}
                           <div className="inline-block relative">
                             <select
+                              disabled={!permissions.includes('tasks.edit') || task.status === 'COMPLETED'}
                               value={task.priority}
                               onChange={(e) => handlePriorityChange(task.id, e.target.value as Priority)}
                               aria-label="Муҳимликни танлаш"
@@ -1533,6 +1528,7 @@ export const TaskRegister: React.FC = () => {
                         return (
                           <button
                             key={p}
+                            disabled={!permissions.includes('tasks.edit') || selectedTask.status === 'COMPLETED'}
                             type="button"
                             onClick={() => handlePriorityChange(selectedTask.id, p)}
                             className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
@@ -1775,7 +1771,7 @@ export const TaskRegister: React.FC = () => {
                                 return (
                                   <button
                                     key={rx.emoji}
-                                    onClick={() => toggleCommentReaction(selectedTask.id, comment.id, rx.emoji)}
+                                    onClick={() => { void toggleCommentReaction(selectedTask.id, comment.id, rx.emoji).catch(() => {}); }}
                                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] transition-all ${
                                       hasUserReacted
                                         ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800 font-bold'
@@ -1796,7 +1792,7 @@ export const TaskRegister: React.FC = () => {
                                 return (
                                   <button
                                     key={emoji}
-                                    onClick={() => toggleCommentReaction(selectedTask.id, comment.id, emoji)}
+                                    onClick={() => { void toggleCommentReaction(selectedTask.id, comment.id, emoji).catch(() => {}); }}
                                     className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-xs opacity-60 hover:opacity-100 transition-opacity"
                                     title={`${emoji} қўшиш`}
                                   >
@@ -1888,7 +1884,7 @@ export const TaskRegister: React.FC = () => {
                                       return (
                                         <button
                                           key={rx.emoji}
-                                          onClick={() => toggleCommentReaction(selectedTask.id, reply.id, rx.emoji)}
+                                          onClick={() => { void toggleCommentReaction(selectedTask.id, reply.id, rx.emoji).catch(() => {}); }}
                                           className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full border text-[10px] ${
                                             hasUserReacted
                                               ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800 font-bold'
@@ -1908,7 +1904,7 @@ export const TaskRegister: React.FC = () => {
                                       return (
                                         <button
                                           key={emoji}
-                                          onClick={() => toggleCommentReaction(selectedTask.id, reply.id, emoji)}
+                                          onClick={() => { void toggleCommentReaction(selectedTask.id, reply.id, emoji).catch(() => {}); }}
                                           className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-[11px] opacity-50 hover:opacity-100"
                                           title={`${emoji} қўшиш`}
                                         >
@@ -1999,11 +1995,19 @@ export const TaskRegister: React.FC = () => {
               </button>
 
               <div className="flex items-center gap-2">
-                {!selectedTask.isClockedIn && (
+                {selectedTask.assignedToId === currentUser.id && selectedTask.status === 'IN_PROGRESS' && <form key={`${selectedTask.id}-${selectedTask.version}`} className="flex items-center gap-2" onSubmit={async e => {
+                  e.preventDefault(); const form = e.currentTarget;
+                  const value = Number(new FormData(form).get('progress'));
+                  try { await updateTask(selectedTask.id, { progressPercent: value }); } catch { return; }
+                }}>
+                  <input aria-label="Progress" name="progress" type="number" min={0} max={99} step={1} required defaultValue={selectedTask.progressPercent} className="w-20 rounded-lg border p-2 text-xs dark:bg-slate-800" />
+                  <button className="rounded-lg border px-3 py-2 text-xs font-semibold">Save progress</button>
+                </form>}
+                {!selectedTask.isClockedIn && selectedTask.assignedToId === currentUser.id && (
                   <button
                     type="button"
-                    onClick={() => {
-                      clockInTask(selectedTask.id);
+                    onClick={async () => {
+                      try { await clockInTask(selectedTask.id); } catch { return; }
                       showNotification('Иш жараёни (Clock In) қайд этилди');
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
@@ -2076,6 +2080,7 @@ export const TaskRegister: React.FC = () => {
                   onChange={(e) => setNewSectionId(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg font-medium"
                 >
+                  <option value="">No section</option>
                   {OFFICIAL_SECTIONS.map(s => (
                     <option key={s.id} value={s.id} className="dark:bg-slate-900">
                       {s.number}. {s.title}
@@ -2084,6 +2089,13 @@ export const TaskRegister: React.FC = () => {
                 </select>
               </div>
 
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Reviewer</label>
+                <select value={newApproverId} onChange={e => setNewApproverId(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800">
+                  <option value="">Any authorized reviewer</option>
+                  {users.filter(u => u.active && ['ADMIN','DIRECTOR'].includes(u.role) && u.id !== newAssigneeId).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                </select>
+              </div>
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Топшириқ Сарлавҳаси *</label>
                 <input
@@ -2115,7 +2127,7 @@ export const TaskRegister: React.FC = () => {
                     onChange={(e) => setNewDeptId(e.target.value)}
                     className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg"
                   >
-                    {departments.map(d => (
+                    {departments.filter(d => d.active !== false).map(d => (
                       <option key={d.id} value={d.id} className="dark:bg-slate-900">{d.name}</option>
                     ))}
                   </select>
@@ -2128,7 +2140,7 @@ export const TaskRegister: React.FC = () => {
                     onChange={(e) => setNewAssigneeId(e.target.value)}
                     className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg font-medium"
                   >
-                    {users.map(u => (
+                    {users.filter(u => u.active).map(u => (
                       <option key={u.id} value={u.id} className="dark:bg-slate-900">
                         {u.fullName} ({u.roleLabel.split(' ')[0]})
                       </option>

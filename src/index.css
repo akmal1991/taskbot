@@ -1,4 +1,7 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+/* Scan application code only, not uploaded documents, skills, or generated reports. */
+@source "./";
+@source "../index.html";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

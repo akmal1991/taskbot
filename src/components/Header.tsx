@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { UserRole } from '../types';
-import { Smartphone, Bell, Sun, Moon } from 'lucide-react';
+import { Smartphone, Bell, Sun, Moon, LogOut } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { canAccessView } from '../utils/permissions';
 
 interface HeaderProps {
@@ -12,7 +12,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => {
   const { 
     currentUser, 
-    switchRole, 
+    permissions,
     notifications, 
     pendingProofsCount, 
     openTma,
@@ -22,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
     theme,
     toggleTheme
   } = useApp();
+  const { logout, error: sessionError } = useAuth();
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
   const navigationItems = [
@@ -29,11 +30,12 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
     { id: 'tasks', label: 'Ish Reja Vazifalari' },
     { id: 'proofs', label: 'Proof-of-Work Tekshiruvi' },
     { id: 'excel', label: 'Excel Ingestion & Reja' },
-    { id: 'users', label: 'Xodimlar & Telegram ID' },
-    { id: 'scheduler', label: 'Redis & Queue Navbati' },
+    { id: 'admin', label: 'Administration' },
+    { id: 'scheduler', label: 'Notification jobs' },
     { id: 'audit', label: 'Audit Jurnali' },
     { id: 'servicedesk', label: 'Murojaatlar (HelpDesk)' },
-  ].filter((item) => canAccessView(item.id, currentUser.role));
+    { id: 'account', label: 'My account' },
+  ].filter((item) => canAccessView(item.id, currentUser.role, permissions));
   const desktopNavigationItems = navigationItems.filter((item) =>
     ['dashboard', 'tasks', 'proofs', 'excel', 'scheduler'].includes(item.id),
   );
@@ -54,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
           <span className="sm:hidden">UniTask</span>
         </a>
         <span className="text-xs text-slate-400 dark:text-slate-500 font-medium hidden lg:inline">
-          ToshTech 2026–2027 Ish Rejasi
+          University work plans
         </span>
       </div>
 
@@ -112,21 +114,12 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
           </select>
         </div>
 
-        {/* 5-Tier RBAC Switcher for fast verification */}
-        <div className="hidden xl:flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 pl-1.5 pr-0.5 hidden sm:inline">Rol:</span>
-          <select
-            value={currentUser.role}
-            onChange={(e) => switchRole(e.target.value as UserRole)}
-            className="text-xs font-semibold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 py-1 px-2 rounded-md shadow-xs border border-slate-200/80 dark:border-slate-700 focus:outline-none cursor-pointer"
-          >
-            <option value="DIRECTOR">DIRECTOR (Rektor)</option>
-            <option value="HEAD">HEAD (Bo'lim Boshlig'i)</option>
-            <option value="ADMIN">ADMIN (Tizim Admini)</option>
-            <option value="WORKER">WORKER (Ijrochi Xodim)</option>
-            <option value="USER">USER (Murojaatchi)</option>
-          </select>
-        </div>
+        <button onClick={() => setActiveView('account')} className="hidden xl:flex flex-col items-end text-xs">
+          <span className="font-semibold">{currentUser.fullName}</span><span className="text-slate-500">{currentUser.role}</span>
+        </button>
+        <button type="button" title="Sign out" aria-label="Sign out" className="rounded-lg border border-slate-200 p-2 dark:border-slate-700" onClick={() => { void logout().catch(() => {}); }}>
+          <LogOut className="h-4 w-4" />
+        </button>
 
         {/* Telegram Mini App (TMA) Simulator Launch Button */}
         <button
@@ -144,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
         </button>
 
         {/* Notification bell */}
-        {canAccessView('scheduler', currentUser.role) && (
+        {canAccessView('scheduler', currentUser.role, permissions) && (
           <button 
             onClick={() => setActiveView('scheduler')}
             className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -172,6 +165,7 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
           ))}
         </select>
       </div>
+      {sessionError && <p role="alert" className="fixed right-4 top-20 z-50 max-w-sm rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900">{sessionError}</p>}
     </header>
   );
 };

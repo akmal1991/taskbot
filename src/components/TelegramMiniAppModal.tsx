@@ -1,738 +1,123 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { X, ListTodo, FileCheck2, Bell, Send, ExternalLink, LoaderCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Task, TaskProof, ProofType } from '../types';
-import { authorizeTelegramAction, TelegramAction } from '../utils/telegramAuth';
-import { 
-  X, 
-  Send, 
-  Clock, 
-  CheckCircle2, 
-  AlertTriangle, 
-  FileText, 
-  Camera, 
-  Link as LinkIcon, 
-  ChevronRight, 
-  Smartphone,
-  ExternalLink,
-  MessageCircle,
-  ListTodo,
-  UserCheck,
-  ShieldAlert,
-  ArrowLeft,
-  RotateCcw,
-  Sparkles,
-  Bot
-} from 'lucide-react';
+import { api } from '../utils/api';
+import { authorizeTelegramAction, type TelegramAction } from '../utils/telegramAuth';
+import { localizeText } from '../utils/i18n';
+import type { ProofType } from '../types';
+import { telegramLaunch } from '../utils/telegramSdk';
 
 export const TelegramMiniAppModal: React.FC = () => {
-  const { 
-    isTmaOpen, 
-    closeTma, 
-    currentUser, 
-    tasks, 
-    clockInTask, 
-    submitProof, 
-    approveProof, 
-    rejectProof,
-    activeTmaTaskId,
-    notifications,
-    triggerJobRun
-  } = useApp();
-
-  const [activeTab, setActiveTab] = useState<'TASKS' | 'PROOF' | 'APPROVALS' | 'BOT_CHAT'>('TASKS');
-  const [selectedTaskId, setSelectedTaskId] = useState<string>(() => {
-    return activeTmaTaskId || tasks[0]?.id || '';
-  });
-  const [filterPeriod, setFilterPeriod] = useState<'TODAY' | 'ACTIVE' | 'ALL'>('TODAY');
-  const [telegramAuthStatus, setTelegramAuthStatus] = useState<'checking' | 'authorized' | 'unauthorized'>('checking');
-  const [telegramAuthError, setTelegramAuthError] = useState('');
-
-  // Proof form states
-  const [proofType, setProofType] = useState<ProofType>('DOCUMENT');
-  const [proofNote, setProofNote] = useState('');
-  const [proofFileName, setProofFileName] = useState('hisobot_dalolatnoma.pdf');
-  const [proofUrl, setProofUrl] = useState('');
-  const [proofError, setProofError] = useState('');
-  const [proofSuccess, setProofSuccess] = useState(false);
-
-  // Bot chat simulator states
-  const [botMessages, setBotMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string; time: string; buttons?: string[] }>>([
-    {
-      sender: 'bot',
-      text: "👋 Assalomu alaykum! UniTask ToshTech avtomatlashtirilgan xizmatiga xush kelibsiz.\n\nSiz 2026–2027 yillik ish rejasidagi shaxsiy topshiriqlaringizni ko'rishingiz va isbot yuklashingiz mumkin.",
-      time: '09:00',
-      buttons: ['📋 Kunlik rejam', '⏱ Ishni boshlash', '🆔 Mening ID raqamim']
-    },
-    {
-      sender: 'bot',
-      text: "📋 09:00 Standup Xulosasi:\nBugun sizga 2 ta faol topshiriq biriktirilgan. Iltimos o'z vaqtida Clock-In qiling va isbotlarni topshiring.",
-      time: '09:00',
-      buttons: ['📱 Mini Appni ochish']
-    }
-  ]);
-  const [botInput, setBotInput] = useState('');
-
+  const { isTmaOpen, closeTma, tasks, currentUser, activeTmaTaskId, permissions, language,
+    clockInTask, submitProof, approveProof, rejectProof, notifications, markNotificationAsRead } = useApp();
+  const t = (text: string) => localizeText(text, language);
+  const [tab, setTab] = useState<'tasks' | 'review' | 'notifications'>('tasks');
+  const [taskId, setTaskId] = useState(''), [note, setNote] = useState(''), [url, setUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null), [type, setType] = useState<ProofType>('TEXT_NOTE');
+  const [remarks, setRemarks] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const inTelegram = telegramLaunch || Boolean((window as any).Telegram?.WebApp?.initData);
+  const own = tasks.filter(task => task.assignedToId === currentUser.id && !task.draft && !task.archivedAt);
+  const reviews = tasks.filter(task => task.status === 'SUBMITTED_FOR_REVIEW' && !task.archivedAt && task.assignedToId !== currentUser.id &&
+    (currentUser.role === 'ADMIN' || !task.approverId || task.approverId === currentUser.id));
+  const task = tasks.find(item => item.id === taskId);
   useEffect(() => {
     if (!isTmaOpen) return;
-
-    let isCurrent = true;
-    setTelegramAuthStatus('checking');
-    setTelegramAuthError('');
-    authorizeTelegramAction('SESSION_CHECK', '', currentUser.telegramId || '')
-      .then(() => {
-        if (isCurrent) setTelegramAuthStatus('authorized');
-      })
-      .catch((error: unknown) => {
-        if (!isCurrent) return;
-        setTelegramAuthStatus('unauthorized');
-        setTelegramAuthError(error instanceof Error ? error.message : 'Telegram sessiyasi tekshirilmadi.');
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [isTmaOpen, currentUser.telegramId]);
-
-  const authorizeAction = async (action: TelegramAction, taskId: string): Promise<boolean> => {
-    try {
-      await authorizeTelegramAction(action, taskId, currentUser.telegramId || '');
-      setTelegramAuthStatus('authorized');
-      setTelegramAuthError('');
-      return true;
-    } catch (error) {
-      setTelegramAuthStatus('unauthorized');
-      setTelegramAuthError(error instanceof Error ? error.message : 'Telegram sessiyasi tekshirilmadi.');
-      return false;
-    }
-  };
-
-  useEffect(() => {
-    if (activeTmaTaskId) {
-      setSelectedTaskId(activeTmaTaskId);
-      const target = tasks.find(t => t.id === activeTmaTaskId);
-      if (target?.status === 'IN_PROGRESS' || target?.status === 'ASSIGNED') {
-        setActiveTab('PROOF');
-      } else {
-        setActiveTab('TASKS');
-      }
-    }
-  }, [activeTmaTaskId, tasks]);
-
+    setTaskId(activeTmaTaskId || own[0]?.id || ''); setTab('tasks'); setError('');
+    setNote(''); setFile(null); setUrl(''); setRemarks('');
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeTma(); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isTmaOpen, activeTmaTaskId]);
   if (!isTmaOpen) return null;
-
-  // Find user tasks (or all tasks for worker simulator)
-  const workerTasks = tasks.filter(t => {
-    if (currentUser.role === 'WORKER') {
-      return t.assignedToId === currentUser.id || t.assignedToTelegramId === currentUser.telegramId;
-    }
-    return true; // For demonstration, Director or Head can see tasks
-  });
-
-  const activeTask = tasks.find(t => t.id === selectedTaskId) || workerTasks[0] || tasks[0];
-
-  const handleClockIn = async (taskId: string) => {
-    if (!(await authorizeAction('CLOCK_IN', taskId))) return;
-    clockInTask(taskId);
-    setBotMessages(prev => [
-      ...prev,
-      {
-        sender: 'user',
-        text: "⏱ Ishni boshlash (Clock In)",
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      },
-      {
-        sender: 'bot',
-        text: `✅ Ish boshlanganligi qayd etildi! Topshiriq: ${activeTask.planCode}. Bajarib bo'lgach majburiy Proof-of-Work yuklang.`,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        buttons: ['📤 Isbot yuklash']
-      }
-    ]);
+  const authorize = async (action: TelegramAction, id: string) => {
+    if (inTelegram) await authorizeTelegramAction(action, id, currentUser.telegramId || '');
   };
-
-  const handleProofSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setProofError('');
-
-    if (proofNote.trim().length < 20) {
-      setProofError(`Matnli xulosa kamida 20 belgidan iborat bo'lishi shart! (Hozir: ${proofNote.trim().length} ta)`);
-      return;
-    }
-
-    if (!(await authorizeAction('SUBMIT_PROOF', activeTask.id))) return;
-
-    const success = submitProof(activeTask.id, {
-      taskId: activeTask.id,
-      type: proofType,
-      fileName: proofFileName,
-      fileSize: '2.4 MB',
-      note: proofNote.trim(),
-      artifactUrl: proofUrl.trim() || undefined,
-      submittedBy: currentUser.fullName,
-      submittedById: currentUser.id,
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true); setError('');
+    try { await action(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); if (!task) return;
+    await run(async () => {
+      await authorize('SUBMIT_PROOF', task.id);
+      let attachmentId: string | undefined;
+      if (['IMAGE','DOCUMENT'].includes(type)) {
+        if (!file) throw new Error('Choose an evidence file.');
+        const form = new FormData(); form.append('file', file);
+        attachmentId = (await api<{ id: string }>(`/tasks/${encodeURIComponent(task.id)}/attachments`, { method: 'POST', body: form })).id;
+      }
+      await submitProof(task.id, { taskId: task.id, type, note: note.trim(), artifactUrl: url.trim() || undefined, attachmentId,
+        submittedBy: currentUser.fullName, submittedById: currentUser.id });
+      setNote(''); setFile(null); setUrl('');
     });
-
-    if (success) {
-      setProofSuccess(true);
-      setBotMessages(prev => [
-        ...prev,
-        {
-          sender: 'user',
-          text: `📤 Isbot yuklandi: ${activeTask.planCode} (${proofFileName})`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        },
-        {
-          sender: 'bot',
-          text: `📥 Topshiriq (${activeTask.planCode}) bo'yicha Proof-of-Work qabul qilindi va ko'rikka yuborildi. Rahbariyat tasdiqlashi bilan sizga xabar keladi.`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-      setTimeout(() => {
-        setProofSuccess(false);
-        setActiveTab('TASKS');
-      }, 1500);
-    }
   };
-
-  const handleProofReview = async (taskId: string, proofId: string, approve: boolean) => {
-    const action = approve ? 'APPROVE_PROOF' : 'REJECT_PROOF';
-    if (!(await authorizeAction(action, taskId))) return;
-    if (approve) {
-      approveProof(taskId, proofId, 'Telegram orqali tasdiqlandi.');
-    } else {
-      rejectProof(taskId, proofId, 'Telegram orqali qaytarildi: qayta ko‘rib chiqilsin.');
-    }
-  };
-
-  const handleSendBotMessage = (textToSend?: string) => {
-    const text = (textToSend || botInput).trim();
-    if (!text) return;
-
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setBotMessages(prev => [...prev, { sender: 'user', text, time }]);
-    setBotInput('');
-
-    // Bot response logic
-    setTimeout(() => {
-      let responseText = "Kechirasiz, buyruq tushunarsiz. Quyidagi menyudan foydalaning:";
-      let buttons = ['📋 Kunlik rejam', '⏱ Ishni boshlash', '🆔 Mening ID raqamim'];
-
-      if (text.includes('/start') || text.includes('boshlash')) {
-        responseText = "Assalomu alaykum! UniTask Telegram boti ToshTech 2026–2027 ish rejasini avtomatlashtirish uchun xizmat qiladi.";
-      } else if (text.includes('/myid') || text.includes('ID')) {
-        responseText = `Sizning Telegram Chat ID raqamingiz: <code>${currentUser.telegramId || '554198302'}</code>\nUsername: @${currentUser.telegramUsername || 'jasur_toshtech'}\nF.I.SH: ${currentUser.fullName}`;
-      } else if (text.includes('rejam') || text.includes('/tasks')) {
-        responseText = `Sizda jami ${workerTasks.length} ta yillik ish reja topshirig'i mavjud:\n` + 
-          workerTasks.slice(0, 3).map(t => `• <b>${t.planCode}</b>: ${t.title.slice(0, 35)}... (${t.status})`).join('\n');
-        buttons = ['📱 Mini Appda ochish'];
-      } else if (text.includes('Mini App') || text.includes('/app')) {
-        responseText = "Telegram Mini App ochilmoqda...";
-        setActiveTab('TASKS');
-      }
-
-      setBotMessages(prev => [...prev, { sender: 'bot', text: responseText, time, buttons }]);
-    }, 600);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
-      {/* Smartphone Device Frame Simulator */}
-      <div className="relative w-full max-w-[390px] h-[780px] bg-slate-900 rounded-[48px] p-3 shadow-2xl border-4 border-slate-700/60 flex flex-col justify-between shrink-0">
-        {/* Dynamic Island / Speaker notch */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-4.5 bg-black rounded-full z-40 flex items-center justify-center">
-          <div className="w-2.5 h-2.5 rounded-full bg-slate-800/80 mr-3" />
-          <div className="w-2 h-2 rounded-full bg-slate-900 border border-slate-700" />
-        </div>
-
-        {/* Telegram App Container */}
-        <div className="w-full h-full bg-[#18222d] text-white rounded-[38px] flex flex-col overflow-hidden relative font-sans">
-          {/* Top Telegram Header Bar */}
-          <div className="pt-6 pb-2.5 px-4 bg-[#212d3b] border-b border-slate-700/50 flex items-center justify-between shrink-0 select-none">
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={closeTma}
-                className="text-sky-400 hover:text-sky-300 text-xs font-semibold flex items-center gap-0.5"
-              >
-                <span>Yopish</span>
-              </button>
-            </div>
-
-            <div className="text-center">
-              <div className="text-xs font-bold text-white flex items-center justify-center gap-1">
-                <span>UniTask Bot</span>
-                <span className="w-3 h-3 bg-sky-500 rounded-full inline-flex items-center justify-center text-[8px] font-bold text-white">✓</span>
-              </div>
-              <div className="text-[10px] text-slate-400">
-                mini app · ToshTech
-              </div>
-            </div>
-
-            <div className="w-10 flex justify-end text-slate-400 text-xs">
-              •••
-            </div>
-          </div>
-
-          {/* User Micro Ribbon inside TMA */}
-          <div className="px-3.5 py-1.5 bg-[#17212b] border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-300 shrink-0">
-            <div className="flex items-center gap-1.5 truncate">
-              <div className="w-4 h-4 rounded-full bg-sky-600 text-[9px] font-bold flex items-center justify-center">
-                {currentUser.fullName[0]}
-              </div>
-              <span className="truncate font-medium">{currentUser.fullName}</span>
-            </div>
-            <span className="font-mono text-[10px] text-sky-400 shrink-0">
-              @{currentUser.telegramUsername || 'worker'}
-            </span>
-          </div>
-
-          {/* Mini App Body Viewport */}
-          <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-[#0e1621]">
-            {telegramAuthStatus !== 'authorized' && (
-              <div
-                role="alert"
-                className="rounded-xl border border-amber-700/70 bg-amber-950/70 px-3 py-2 text-[11px] text-amber-200"
-              >
-                <div className="font-bold">
-                  {telegramAuthStatus === 'checking' ? 'Telegram sessiyasi tekshirilmoqda…' : 'Telegram tasdiqlashi talab qilinadi'}
-                </div>
-                {telegramAuthError && <div className="mt-1">{telegramAuthError}</div>}
-                {telegramAuthStatus === 'unauthorized' && (
-                  <div className="mt-1">Topshiriq amallari faqat haqiqiy Telegram Mini App sessiyasi bilan ishlaydi.</div>
-                )}
-              </div>
-            )}
-
-            {/* VIEW 1: MY TASKS */}
-            {activeTab === 'TASKS' && (
-              <div className="space-y-3">
-                {/* Greeting & Date Header */}
-                <div className="bg-[#17212b] p-3 rounded-2xl border border-slate-800">
-                  <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
-                    ToshTech 2026–2027 Ишлар Режаси
-                  </div>
-                  <div className="text-sm font-bold text-white mt-0.5">
-                    92 та Расмий Топшириқ
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-slate-300 font-mono">
-                    <span>Сизга тегишли:</span>
-                    <span className="font-bold text-sky-400">{workerTasks.length} та вазифа</span>
-                  </div>
-                </div>
-
-                {/* Search input in TMA */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Топшириқ қидириш (Т/р, номи)..."
-                    value={botInput.startsWith('/') ? '' : botInput}
-                    onChange={(e) => setBotInput(e.target.value)}
-                    className="w-full bg-[#17212b] border border-slate-800 text-[11px] px-3 py-1.5 rounded-xl text-white placeholder-slate-500 focus:outline-none"
-                  />
-                </div>
-
-                {/* Filter segments */}
-                <div className="flex items-center gap-1 bg-[#17212b] p-1 rounded-xl">
-                  <button
-                    onClick={() => setFilterPeriod('TODAY')}
-                    className={`flex-1 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
-                      filterPeriod === 'TODAY' ? 'bg-[#2b5278] text-white' : 'text-slate-400'
-                    }`}
-                  >
-                    Биринчи 15 та
-                  </button>
-                  <button
-                    onClick={() => setFilterPeriod('ACTIVE')}
-                    className={`flex-1 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
-                      filterPeriod === 'ACTIVE' ? 'bg-[#2b5278] text-white' : 'text-slate-400'
-                    }`}
-                  >
-                    Жараёнда
-                  </button>
-                  <button
-                    onClick={() => setFilterPeriod('ALL')}
-                    className={`flex-1 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
-                      filterPeriod === 'ALL' ? 'bg-[#2b5278] text-white' : 'text-slate-400'
-                    }`}
-                  >
-                    Барча 92 та
-                  </button>
-                </div>
-
-                {/* Task Cards List */}
-                <div className="space-y-2.5">
-                  {workerTasks.map((task) => (
-                    <div 
-                      key={task.id}
-                      className="bg-[#17212b] border border-slate-800/80 rounded-2xl p-3.5 space-y-2.5 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-sky-400">
-                          {task.planCode}
-                        </span>
-                        <span className={`text-[9px] font-mono font-semibold px-2 py-0.5 rounded-full ${
-                          task.status === 'COMPLETED'
-                            ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50'
-                            : task.status === 'SUBMITTED_FOR_REVIEW'
-                              ? 'bg-amber-900/40 text-amber-300 border border-amber-700/50'
-                              : task.status === 'OVERDUE'
-                                ? 'bg-rose-900/40 text-rose-300 border border-rose-700/50'
-                                : 'bg-slate-800 text-slate-300'
-                        }`}>
-                          {task.status}
-                        </span>
-                      </div>
-
-                      <div className="text-xs font-semibold text-white leading-snug">
-                        {task.title}
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800">
-                        <span>Muddat: {task.deadline}</span>
-                        <span className="font-mono text-amber-400 font-semibold">{task.priority}</span>
-                      </div>
-
-                      {/* Action buttons inside Card */}
-                      <div className="pt-1 flex items-center gap-2">
-                        {task.status === 'ASSIGNED' || task.status === 'PENDING' ? (
-                          <button
-                            onClick={() => handleClockIn(task.id)}
-                            disabled={telegramAuthStatus !== 'authorized'}
-                            className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Ishni boshlash (Clock In)</span>
-                          </button>
-                        ) : task.status === 'IN_PROGRESS' || task.status === 'OVERDUE' ? (
-                          <button
-                            onClick={() => {
-                              setSelectedTaskId(task.id);
-                              setActiveTab('PROOF');
-                            }}
-                            className="w-full py-2 px-3 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Proof-of-Work topshirish</span>
-                          </button>
-                        ) : task.status === 'SUBMITTED_FOR_REVIEW' ? (
-                          <div className="w-full py-1.5 text-center text-[11px] text-amber-300 bg-amber-950/40 rounded-lg border border-amber-800/40 font-medium">
-                            Kutilmoqda: Rahbariyat ko'rigida
-                          </div>
-                        ) : (
-                          <div className="w-full py-1.5 text-center text-[11px] text-emerald-400 bg-emerald-950/40 rounded-lg border border-emerald-800/40 font-medium">
-                            ✓ Tasdiqlangan va yakunlangan
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 2: SUBMIT PROOF-OF-WORK */}
-            {activeTab === 'PROOF' && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <button 
-                    onClick={() => setActiveTab('TASKS')}
-                    className="p-1 text-slate-400 hover:text-white"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <div className="text-xs font-bold text-white">
-                    Proof-of-Work Yuklash: {activeTask.planCode}
-                  </div>
-                </div>
-
-                <div className="bg-[#17212b] p-3 rounded-2xl border border-slate-800 text-xs">
-                  <div className="font-semibold text-white mb-1">{activeTask.title}</div>
-                  <div className="text-[11px] text-slate-400">
-                    Mas'ul: {activeTask.assignedToName} · Muddat: {activeTask.deadline}
-                  </div>
-                </div>
-
-                {proofSuccess ? (
-                  <div className="p-6 bg-emerald-950/40 border border-emerald-700/60 rounded-2xl text-center space-y-2">
-                    <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                    <div className="text-sm font-bold text-white">Isbot Muvaffaqiyatli Yuklandi!</div>
-                    <p className="text-xs text-emerald-300">
-                      Topshiriq ko'rik holatiga o'tkazildi. Bo'lim boshlig'iga Telegram orqali xabar yuborildi.
-                    </p>
-                  </div>
-                ) : (
-                  <form onSubmit={handleProofSubmit} className="space-y-3 text-xs">
-                    {/* Proof Type Picker */}
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                        Isbot Turi *
-                      </label>
-                      <div className="grid grid-cols-3 gap-1.5 bg-[#17212b] p-1 rounded-xl">
-                        <button
-                          type="button"
-                          onClick={() => setProofType('DOCUMENT')}
-                          className={`py-1.5 text-[10px] font-semibold rounded-lg ${
-                            proofType === 'DOCUMENT' ? 'bg-[#2b5278] text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          Hujjat / PDF
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setProofType('IMAGE')}
-                          className={`py-1.5 text-[10px] font-semibold rounded-lg ${
-                            proofType === 'IMAGE' ? 'bg-[#2b5278] text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          Fotosurat
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setProofType('URL')}
-                          className={`py-1.5 text-[10px] font-semibold rounded-lg ${
-                            proofType === 'URL' ? 'bg-[#2b5278] text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          Havola
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* File Attachment simulated */}
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                        Fayl Biriktirish *
-                      </label>
-                      <div className="p-3 bg-[#17212b] border border-slate-800 rounded-xl flex items-center justify-between">
-                        <div className="flex items-center gap-2 truncate">
-                          <Camera className="w-4 h-4 text-sky-400 shrink-0" />
-                          <span className="font-mono text-[11px] text-slate-200 truncate">
-                            {proofFileName}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setProofFileName(`hisobot_${Date.now().toString().slice(-4)}.pdf`)}
-                          className="text-[10px] text-sky-400 font-semibold underline"
-                        >
-                          Almashtirish
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Written Summary narrative (min 20 chars counter) */}
-                    <div>
-                      <div className="flex items-center justify-between text-[11px] mb-1">
-                        <label className="font-semibold text-slate-400">
-                          Bajarilgan Ish Xulosasi (Narrative) *
-                        </label>
-                        <span className={`font-mono text-[10px] ${
-                          proofNote.trim().length >= 20 ? 'text-emerald-400 font-bold' : 'text-amber-400'
-                        }`}>
-                          {proofNote.trim().length} / 20 belgi
-                        </span>
-                      </div>
-                      <textarea
-                        rows={3}
-                        required
-                        placeholder="Topshiriq yuzasidan amalga oshirilgan ishlarni qisqacha bayon qiling (kamida 20 ta belgi)..."
-                        value={proofNote}
-                        onChange={(e) => setProofNote(e.target.value)}
-                        className="w-full text-xs p-2.5 bg-[#17212b] border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-                      />
-                    </div>
-
-                    {/* External Artifact URL */}
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                        Tashqi Havola (Google Drive / GitHub / Server)
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://drive.google.com/... yoki https://github.com/..."
-                        value={proofUrl}
-                        onChange={(e) => setProofUrl(e.target.value)}
-                        className="w-full text-xs p-2 bg-[#17212b] border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none font-mono"
-                      />
-                    </div>
-
-                    {proofError && (
-                      <div className="p-2.5 bg-rose-950/60 border border-rose-800 rounded-xl text-[11px] text-rose-300 font-medium">
-                        {proofError}
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={telegramAuthStatus !== 'authorized'}
-                      className="w-full py-2.5 px-4 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center justify-center gap-1.5"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Ko'rikka Topshirish (SUBMIT)</span>
-                    </button>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {/* VIEW 3: HEAD TELEGRAM APPROVALS */}
-            {activeTab === 'APPROVALS' && (
-              <div className="space-y-3">
-                <div className="bg-[#17212b] p-3 rounded-2xl border border-slate-800">
-                  <div className="text-[11px] text-slate-400 font-semibold uppercase">
-                    Rahbariyat Tezkor Tasdig'i
-                  </div>
-                  <div className="text-xs text-slate-300 mt-1">
-                    Bo'lim xodimlari tomonidan taqdim etilgan isbotlarni to'g'ridan-to'g'ri Telegramdan tasdiqlang.
-                  </div>
-                </div>
-
-                <div className="space-y-2.5">
-                  {tasks.filter(t => t.status === 'SUBMITTED_FOR_REVIEW').length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-400">
-                      Hozirda tasdiqlash uchun navbatda isbotlar yo'q.
-                    </div>
-                  ) : (
-                    tasks.filter(t => t.status === 'SUBMITTED_FOR_REVIEW').map((t) => (
-                      <div key={t.id} className="bg-[#17212b] p-3.5 rounded-2xl border border-slate-800 space-y-2 text-xs">
-                        <div className="flex items-center justify-between font-mono text-[11px]">
-                          <span className="font-bold text-sky-400">{t.planCode}</span>
-                          <span className="text-amber-400 font-semibold">KO'RIKDA</span>
-                        </div>
-                        <div className="font-semibold text-white">{t.title}</div>
-                        <div className="text-[11px] text-slate-400">Xodim: {t.assignedToName}</div>
-
-                        {t.proofs[0] && (
-                          <div className="p-2 bg-[#0e1621] rounded-xl text-[11px] text-slate-300 italic border border-slate-800">
-                            "{t.proofs[0].note || t.proofs[0].fileName}"
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <button
-                            disabled={telegramAuthStatus !== 'authorized'}
-                            onClick={() => void handleProofReview(t.id, t.proofs[0]?.id || '', false)}
-                            className="py-1.5 px-3 bg-rose-950/60 hover:bg-rose-900/60 disabled:opacity-50 disabled:cursor-not-allowed border border-rose-800 text-rose-300 font-bold rounded-xl text-[11px]"
-                          >
-                            ↩️ Qaytarish
-                          </button>
-                          <button
-                            disabled={telegramAuthStatus !== 'authorized'}
-                            onClick={() => void handleProofReview(t.id, t.proofs[0]?.id || '', true)}
-                            className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-[11px]"
-                          >
-                            ✅ Tasdiqlash
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 4: TELEGRAM BOT CHAT SIMULATOR */}
-            {activeTab === 'BOT_CHAT' && (
-              <div className="flex flex-col h-full justify-between space-y-2 text-xs">
-                {/* Chat Stream */}
-                <div className="space-y-2.5 overflow-y-auto max-h-[480px] pr-1">
-                  {botMessages.map((msg, i) => (
-                    <div 
-                      key={i} 
-                      className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                    >
-                      <div className={`p-3 rounded-2xl max-w-[85%] leading-relaxed ${
-                        msg.sender === 'user'
-                          ? 'bg-[#2b5278] text-white rounded-br-xs'
-                          : 'bg-[#182533] text-slate-200 rounded-bl-xs border border-slate-700/50'
-                      }`}>
-                        <div className="text-[11px] whitespace-pre-line" dangerouslySetInnerHTML={{ __html: msg.text }} />
-                        <div className="text-[9px] text-slate-400 text-right mt-1 font-mono">
-                          {msg.time}
-                        </div>
-                      </div>
-
-                      {/* Bot Inline Buttons */}
-                      {msg.buttons && (
-                        <div className="mt-1 flex flex-wrap gap-1 max-w-[85%]">
-                          {msg.buttons.map((btn, bIdx) => (
-                            <button
-                              key={bIdx}
-                              onClick={() => handleSendBotMessage(btn)}
-                              className="px-2.5 py-1 bg-[#243447] hover:bg-[#2b5278] text-[10px] text-sky-300 font-semibold rounded-lg border border-slate-700/60 transition-colors"
-                            >
-                              {btn}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Chat Input Bar */}
-                <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    placeholder="Buyruq yoki xabar yozing..."
-                    value={botInput}
-                    onChange={(e) => setBotInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSendBotMessage()}
-                    className="flex-1 bg-[#17212b] border border-slate-800 text-xs px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none"
-                  />
-                  <button
-                    onClick={() => handleSendBotMessage()}
-                    className="p-2 bg-sky-500 hover:bg-sky-400 text-white rounded-xl"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Fixed Navigation Bar (conforming to references/10_mobile_touch_apps.md) */}
-          <div className="h-14 bg-[#212d3b] border-t border-slate-800 px-2 grid grid-cols-4 items-center shrink-0">
-            <button
-              onClick={() => setActiveTab('TASKS')}
-              className={`flex flex-col items-center justify-center py-1 transition-colors ${
-                activeTab === 'TASKS' ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <ListTodo className="w-4 h-4" />
-              <span className="text-[10px] tracking-tight mt-0.5">Topshiriq</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('PROOF')}
-              className={`flex flex-col items-center justify-center py-1 transition-colors ${
-                activeTab === 'PROOF' ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span className="text-[10px] tracking-tight mt-0.5">Isbot (PoW)</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('APPROVALS')}
-              className={`flex flex-col items-center justify-center py-1 transition-colors ${
-                activeTab === 'APPROVALS' ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              <span className="text-[10px] tracking-tight mt-0.5">Tasdiq</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('BOT_CHAT')}
-              className={`flex flex-col items-center justify-center py-1 transition-colors ${
-                activeTab === 'BOT_CHAT' ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Bot className="w-4 h-4" />
-              <span className="text-[10px] tracking-tight mt-0.5">Bot Chat</span>
-            </button>
-          </div>
-        </div>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-2 backdrop-blur-sm sm:p-6" onClick={e => { if (e.target === e.currentTarget) closeTma(); }}>
+    <section role="dialog" aria-modal="true" aria-labelledby="task-workspace-title" className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-3xl border-4 border-slate-800 bg-[#18222d] text-slate-100 shadow-2xl">
+      <header className="flex items-center justify-between border-b border-slate-700 bg-[#213040] px-5 py-4">
+        <div><h2 id="task-workspace-title" className="font-bold">{t('Task workspace')}</h2><p className="text-xs text-slate-300">{currentUser.fullName}</p></div>
+        <button autoFocus onClick={closeTma} aria-label="Close" className="rounded-lg p-2 hover:bg-slate-700"><X size={20} /></button>
+      </header>
+      <nav className="flex border-b border-slate-700 text-xs font-semibold">
+        <button onClick={() => { setTab('tasks'); setTaskId(own[0]?.id || ''); }} className={`flex flex-1 items-center justify-center gap-2 p-4 ${tab === 'tasks' ? 'bg-sky-800' : ''}`}><ListTodo size={16} />{t('My tasks')}</button>
+        {permissions.includes('tasks.review') && <button onClick={() => { setTab('review'); setTaskId(reviews[0]?.id || ''); }} className={`flex flex-1 items-center justify-center gap-2 p-4 ${tab === 'review' ? 'bg-sky-800' : ''}`}><FileCheck2 size={16} />{t('Review')}</button>}
+        <button onClick={() => setTab('notifications')} className={`flex flex-1 items-center justify-center gap-2 p-4 ${tab === 'notifications' ? 'bg-sky-800' : ''}`}><Bell size={16} />{t('Notifications')}</button>
+      </nav>
+      <div className="space-y-4 overflow-y-auto p-5">
+        {error && <p role="alert" className="rounded-lg border border-rose-700 bg-rose-950 p-3 text-sm text-rose-100">{t(error)}</p>}
+        {tab === 'notifications' ? <ul className="space-y-3">
+          {!notifications.length && <li className="text-sm text-slate-300">{t('No notifications')}</li>}
+          {notifications.map(n => <li key={n.id} className="rounded-xl bg-[#213040] p-4 text-sm">
+            <h3 className="font-bold">{n.title}</h3><p className="mt-2">{n.messageText}</p>
+            {!n.isRead && <button disabled={busy} onClick={() => { void run(() => markNotificationAsRead(n.id)); }} className="mt-3 text-sky-300 underline">{t('Mark as read')}</button>}
+          </li>)}
+        </ul> : <>
+          <label className="block text-sm">{t('Select task')}
+            <select value={taskId} onChange={e => { setTaskId(e.target.value); setError(''); setNote(''); setFile(null); setRemarks(''); }} className="mt-2 w-full rounded-lg border border-slate-600 bg-[#213040] p-3">
+              <option value="">{t('Select task')}</option>
+              {(tab === 'tasks' ? own : reviews).map(item => <option key={item.id} value={item.id}>{item.planCode} · {item.title}</option>)}
+            </select>
+          </label>
+          {task && <article className="space-y-4 rounded-xl bg-[#213040] p-4">
+            <p className="text-xs font-mono text-sky-300">{task.planCode} · {t(task.status)}</p>
+            <h3 className="font-bold leading-snug">{task.title}</h3>
+            <p className="whitespace-pre-wrap text-sm text-slate-300">{task.description}</p>
+            {task.acceptanceCriteria && <p className="whitespace-pre-wrap text-sm">{task.acceptanceCriteria}</p>}
+            <p className="text-xs">{t('Deadline')}: {task.deadline} · {task.progressPercent}%</p>
+            {tab === 'tasks' && task.assignedToId === currentUser.id && ['PENDING','ASSIGNED'].includes(task.status) &&
+              <button disabled={busy} className="w-full rounded-lg bg-sky-600 p-3 text-sm font-bold disabled:opacity-50" onClick={() => { void run(async () => { await authorize('CLOCK_IN', task.id); await clockInTask(task.id); }); }}>{t('Start task')}</button>}
+            {tab === 'tasks' && task.assignedToId === currentUser.id && task.status === 'IN_PROGRESS' && <form onSubmit={submit} className="space-y-3 border-t border-slate-600 pt-4">
+              <h4 className="font-semibold">{t('Submit evidence')}</h4>
+              <label className="block text-sm">{t('Evidence type')}<select value={type} onChange={e => { setType(e.target.value as ProofType); setFile(null); setUrl(''); }} className="mt-1 w-full rounded-lg bg-[#18222d] p-2">
+                {(['TEXT_NOTE','URL','DOCUMENT','IMAGE'] as ProofType[]).map(value => <option key={value} value={value}>{t(value)}</option>)}
+              </select></label>
+              <label className="block text-sm">{t('Evidence note')}<textarea required={task.requiresEvidence} minLength={task.requiresEvidence ? 20 : 0} maxLength={20000} value={note} onChange={e => setNote(e.target.value)} className="mt-1 min-h-24 w-full rounded-lg bg-[#18222d] p-3" /></label>
+              {type === 'URL' && <label className="block text-sm">{t('Evidence URL')}<input required type="url" value={url} onChange={e => setUrl(e.target.value)} className="mt-1 w-full rounded-lg bg-[#18222d] p-2" /></label>}
+              {['IMAGE','DOCUMENT'].includes(type) && <label className="block text-sm">{t('Evidence file')}<input required type="file" accept={type === 'IMAGE' ? 'image/png,image/jpeg' : 'application/pdf'} onChange={e => setFile(e.target.files?.[0] || null)} className="mt-2 block w-full text-xs" /><span className="mt-1 block text-xs text-slate-300">{t('PDF, PNG or JPEG; maximum 10 MB.')}</span></label>}
+              <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-600 p-3 font-bold disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={16} /> : <Send size={16} />}{t('Submit evidence')}</button>
+            </form>}
+            {tab === 'review' && task.status === 'SUBMITTED_FOR_REVIEW' && <div className="space-y-3 border-t border-slate-600 pt-4">
+              <label className="block text-sm">{t('Review remarks')}<textarea required minLength={1} maxLength={20000} value={remarks} onChange={e => setRemarks(e.target.value)} className="mt-1 w-full rounded-lg bg-[#18222d] p-3" /></label>
+              <div className="flex gap-3">{(['REJECTED','APPROVED'] as const).map(decision => <button key={decision} disabled={busy || !remarks.trim()} className={`flex-1 rounded-lg p-3 text-sm font-bold disabled:opacity-50 ${decision === 'APPROVED' ? 'bg-emerald-700' : 'bg-rose-800'}`} onClick={() => { void run(async () => {
+                await authorize(decision === 'APPROVED' ? 'APPROVE_PROOF' : 'REJECT_PROOF', task.id);
+                if (decision === 'APPROVED') await approveProof(task.id, task.proofs[0]?.id || '', remarks);
+                else await rejectProof(task.id, task.proofs[0]?.id || '', remarks);
+                setRemarks(''); setTaskId('');
+              }); }}>{t(decision === 'APPROVED' ? 'Approve' : 'Return for revision')}</button>)}</div>
+            </div>}
+            {!!task.proofs.length && <section className="space-y-3 border-t border-slate-600 pt-4">
+              <h4 className="font-semibold">{t('Evidence history')}</h4>
+              {task.proofs.map(proof => <div key={proof.id} className="rounded-lg bg-[#18222d] p-3 text-sm">
+                <p className="mb-2 text-xs text-sky-300">{t(proof.status)} · {new Date(proof.submittedAt).toLocaleString(language)}</p>
+                <p className="whitespace-pre-wrap">{proof.note}</p>
+                {proof.fileUrl && <a href={proof.fileUrl} className="mt-2 flex items-center gap-2 text-sky-300 underline"><ExternalLink size={14} />{proof.fileName}</a>}
+                {proof.artifactUrl && <a href={proof.artifactUrl} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-2 text-sky-300 underline"><ExternalLink size={14} />{t('Evidence URL')}</a>}
+                {proof.reviewerRemarks && <p className="mt-2 whitespace-pre-wrap text-slate-300">{proof.reviewerRemarks}</p>}
+              </div>)}
+            </section>}
+          </article>}
+          {!task && <p className="py-8 text-center text-sm text-slate-300">{t('No tasks selected')}</p>}
+        </>}
       </div>
-    </div>
-  );
+    </section>
+  </div>;
 };
