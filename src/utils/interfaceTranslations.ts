@@ -2259,5 +2259,10 @@ export const interfaceTranslations: Record<string, { en: string; ru: string; 'uz
     "en": "UniTask",
     "ru": "UniTask",
     "uz-Latn": "UniTask"
+  },
+  "Import xatolari:": {
+    "en": "Import errors:",
+    "ru": "Ошибки импорта:",
+    "uz-Latn": "Import xatolari:"
   }
 };

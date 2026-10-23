@@ -1,1 +1,2 @@
 - [Bun lockfile compatibility](bun-lockfile-compatibility.md) — Replit's configured Bun may reject imported lockfiles written by a newer release.
+- [Post-merge build budget](post-merge-build-budget.md) — Tailwind's production build takes about 170 seconds here; allow at least 240 seconds for post-merge setup.
