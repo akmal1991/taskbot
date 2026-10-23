@@ -28,3 +28,17 @@ mtime_ms = 1792765949514
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:b85c4b44-f1ff-40fa-a850-071b99cb8dce/d46fb127-1cb8-45e6-a1c2-e3c6eea93b26/89c580b9-4c32-416c-8811-e95e3245c848"
 storage_version_token = "1792766055996189"
 content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+[[outputs]]
+id = "y7sZAfY07wSO8p4_ILrVv"
+uri = "file://generated-artifacts/ToshTech_Work_Plan_Final.xlsx"
+type = "table"
+title = "ToshTech Work Plan — Final Workbook"
+description = "All 92 tasks completed. Includes clearly labeled sample assignees and reviewers, original source information, editable dropdowns, and a sample-participant register."
+logical_id = "a6983b45-b2b8-4d6a-b324-6948594acb02"
+content_hash = "sha256:181ca3a859e454e1ce75b9bd90805fea00b95919e26c5efdd55a87d95fbd9d5c"
+size = 57099
+mtime_ms = 1792766415647
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:b85c4b44-f1ff-40fa-a850-071b99cb8dce/a6983b45-b2b8-4d6a-b324-6948594acb02/7ccfaf80-0bf0-4b07-bd18-7331386e5472"
+storage_version_token = "1792766424627287"
+content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
