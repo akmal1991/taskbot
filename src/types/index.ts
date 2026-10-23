@@ -13,7 +13,7 @@ export type Priority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type ProofType = 'IMAGE' | 'DOCUMENT' | 'TEXT_NOTE' | 'URL';
 
-export type Language = 'uz_latn' | 'uz_cyrl' | 'ru' | 'en';
+export type Language = 'uz-Latn' | 'uz-Cyrl' | 'ru' | 'en';
 
 export interface Department {
   id: string;

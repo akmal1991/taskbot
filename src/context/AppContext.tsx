@@ -17,6 +17,7 @@ import {
   INITIAL_USERS, 
 } from '../data/mockData';
 import { AppStorageStatus, loadAppData, saveAppData } from '../utils/appStorage';
+import { syncDocumentLanguage } from '../utils/i18n';
 
 interface AppContextType {
   currentUser: User;
@@ -76,7 +77,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUser, setCurrentUser] = useState<User>(() =>
     initialData.users.find(user => user.id === initialData.currentUserId) || initialData.users[0] || INITIAL_USERS[0]
   );
-  const [language, setLanguage] = useState<Language>(initialData.language);
+  const [language, setLanguageState] = useState<Language>(() =>
+    syncDocumentLanguage(initialData.language)
+  );
+  const setLanguage = (nextLanguage: Language) => {
+    setLanguageState(syncDocumentLanguage(nextLanguage));
+  };
   const [storageStatus, setStorageStatus] = useState<AppStorageStatus>(initialData.storageStatus);
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {

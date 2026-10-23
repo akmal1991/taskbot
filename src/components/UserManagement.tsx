@@ -23,6 +23,7 @@ export const UserManagement: React.FC = () => {
   const [telegramIdInput, setTelegramIdInput] = useState('');
   const [telegramUsernameInput, setTelegramUsernameInput] = useState('');
   const [copiedToken, setCopiedToken] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
   const handleOpenBindingModal = (user: User) => {
     setSelectedUser(user);
@@ -43,10 +44,20 @@ export const UserManagement: React.FC = () => {
     setSelectedUser(null);
   };
 
-  const handleCopyCommand = (command: string) => {
-    navigator.clipboard.writeText(command);
-    setCopiedToken(true);
-    setTimeout(() => setCopiedToken(false), 2000);
+  const handleCopyCommand = async (command: string) => {
+    setCopyError(false);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(command);
+      setCopiedToken(true);
+    } catch {
+      setCopiedToken(false);
+      setCopyError(true);
+    }
+    window.setTimeout(() => {
+      setCopiedToken(false);
+      setCopyError(false);
+    }, 2500);
   };
 
   return (
@@ -138,7 +149,7 @@ export const UserManagement: React.FC = () => {
                       <div>
                         <span className="font-semibold text-slate-800 dark:text-slate-200">{user.telegramId}</span>
                         {user.telegramUsername && (
-                          <div className="text-[11px] text-sky-600 dark:text-sky-400">@{user.telegramUsername}</div>
+                          <div translate="no" className="text-[11px] text-sky-600 dark:text-sky-400">@{user.telegramUsername}</div>
                         )}
                       </div>
                     ) : (
@@ -211,7 +222,13 @@ export const UserManagement: React.FC = () => {
                   className="text-sky-600 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 flex items-center gap-1 font-sans text-xs font-semibold"
                 >
                   <Copy className="w-3.5 h-3.5" />
-                  <span>{copiedToken ? "Nusxalandi!" : "Nusxalash"}</span>
+                  <span aria-live="polite">
+                    {copyError
+                      ? "Nusxalash muvaffaqiyatsiz. Buyruqni qo'lda tanlab nusxalang."
+                      : copiedToken
+                        ? "Nusxalandi!"
+                        : "Nusxalash"}
+                  </span>
                 </button>
               </div>
             </div>

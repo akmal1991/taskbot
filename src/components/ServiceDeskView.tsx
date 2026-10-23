@@ -23,6 +23,7 @@ export const ServiceDeskView: React.FC = () => {
   // Form states
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [formError, setFormError] = useState('');
   const [departmentId, setDepartmentId] = useState(departments[0]?.id || '');
   const [priority, setPriority] = useState<Priority>('MEDIUM');
   const [applicantName, setApplicantName] = useState(currentUser.fullName);
@@ -34,6 +35,10 @@ export const ServiceDeskView: React.FC = () => {
     if (!title.trim() || !description.trim()) return;
 
     const dept = departments.find(d => d.id === departmentId) || departments[0];
+    if (!dept) {
+      setFormError('Murojaat yuborish uchun bo‘lim mavjud emas.');
+      return;
+    }
 
     createTicket({
       title: title.trim(),
@@ -75,7 +80,10 @@ export const ServiceDeskView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setFormError('');
+            setIsModalOpen(true);
+          }}
           className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -162,11 +170,17 @@ export const ServiceDeskView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+              {formError && (
+                <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                  {formError}
+                </p>
+              )}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Qaysi bo'limga? *</label>
                 <select
                   value={departmentId}
                   onChange={(e) => setDepartmentId(e.target.value)}
+                  disabled={departments.length === 0}
                   className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg"
                 >
                   {departments.map(d => (
@@ -232,6 +246,7 @@ export const ServiceDeskView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={departments.length === 0}
                   className="px-4 py-2 bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs"
                 >
                   Yuborish

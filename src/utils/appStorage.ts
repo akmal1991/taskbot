@@ -17,6 +17,7 @@ import {
   TelegramNotification,
   User,
 } from '../types';
+import { DEFAULT_LANGUAGE, normalizeLanguage } from './i18n';
 
 const STORAGE_KEY = 'unitask_app_data_v1';
 const BACKUP_KEY = 'unitask_app_data_corrupt_backup';
@@ -54,7 +55,7 @@ const getDemoData = (): AppData => ({
   notifications: INITIAL_NOTIFICATIONS,
   tickets: INITIAL_TICKETS,
   currentUserId: INITIAL_USERS[0]?.id ?? null,
-  language: 'uz_latn',
+  language: DEFAULT_LANGUAGE,
 });
 
 const isRecordArray = <T>(value: unknown): value is T[] =>
@@ -65,9 +66,6 @@ const isRecordArray = <T>(value: unknown): value is T[] =>
       record !== null &&
       typeof (record as { id?: unknown }).id === 'string',
   );
-
-const isLanguage = (value: unknown): value is Language =>
-  value === 'uz_latn' || value === 'uz_cyrl' || value === 'ru' || value === 'en';
 
 const hasValidStoredCollections = (value: unknown): value is StoredAppData => {
   if (typeof value !== 'object' || value === null) return false;
@@ -82,8 +80,7 @@ const hasValidStoredCollections = (value: unknown): value is StoredAppData => {
     isRecordArray<QueueJob>(data.queueJobs) &&
     isRecordArray<TelegramNotification>(data.notifications) &&
     isRecordArray<ServiceDeskTicket>(data.tickets) &&
-    (data.currentUserId === null || typeof data.currentUserId === 'string') &&
-    isLanguage(data.language)
+    (data.currentUserId === null || typeof data.currentUserId === 'string')
   );
 };
 
@@ -108,7 +105,12 @@ export const loadAppData = (): AppDataLoadResult => {
     const parsed: unknown = JSON.parse(raw);
     if (hasValidStoredCollections(parsed)) {
       const { version: _version, ...data } = parsed;
-      return { ...data, storageStatus: 'saved', canPersist: true };
+      return {
+        ...data,
+        language: normalizeLanguage(data.language),
+        storageStatus: 'saved',
+        canPersist: true,
+      };
     }
   } catch {
     // Preserve unreadable content below and start safely from demo data.
