@@ -1,0 +1,1 @@
+- [Bun lockfile compatibility](bun-lockfile-compatibility.md) — imported JSON-format Bun locks may need regeneration before post-merge installs work.
