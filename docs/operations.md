@@ -12,7 +12,7 @@
 Set `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_EMAIL`, and a strong `BOOTSTRAP_ADMIN_PASSWORD` in workspace secrets, not source or chat.
 Run `bun run provision:admin` in the intended development environment and remove the bootstrap password afterward.
 The command refuses to provision another administrator while an active one exists.
-To reset the active account named `admin`, set a new `ADMIN_RESET_PASSWORD` in workspace secrets and run `bun run reset:admin-password`. This invalidates all of that account's sessions and pending setup/reset links and records an audit event. Remove the temporary secret after the command succeeds; never provide passwords in chat or source files.
+To reset the active administrator associated with `BOOTSTRAP_ADMIN_EMAIL`, set a new `ADMIN_RESET_PASSWORD` in workspace secrets and run `bun run reset:admin-password`. It sets the login name to `admin`, invalidates that account's sessions and pending setup/reset links, and records an audit event. Remove the temporary secret after the command succeeds; never provide passwords in chat or source files.
 After publishing, use the environment's normal protected account-provisioning process; do not assume development records are copied to a production database.
 No production migration/provisioning has been performed in this implementation session.
 
