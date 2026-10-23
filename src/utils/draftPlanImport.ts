@@ -16,6 +16,15 @@ export interface DraftPlanItem {
   oversight: string;
   responsible: string;
   distributedUnits: string;
+  completion?: {
+    planCode: string;
+    priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+    category: string;
+    reviewer: string;
+    responsibleDepartment: string;
+    sampleData: boolean;
+    sampleResponsible?: string;
+  };
 }
 
 export interface DraftPlanImport {
@@ -70,6 +79,17 @@ export function parseDraftPlanWorkbook(
   if (columns.some(index => index < 0)) {
     throw new Error('The workbook is missing required work-plan columns.');
   }
+  const completionColumns = [
+    ['Режа коди'], ['Устуворлик', 'Устуворлик даражаси'], ['Иш режаси тоифаси'],
+    ['Тақризчи'], ['Масъул бўлинма'],
+  ].map(aliases => headers.findIndex(header =>
+    aliases.some(alias => header.split('(')[0].trim() === normalizeHeader(alias))));
+  const hasCompletion = completionColumns.some(index => index >= 0);
+  if (hasCompletion && completionColumns.some(index => index < 0)) {
+    throw new Error('The completed workbook contains invalid or incomplete task fields.');
+  }
+  const sampleWorkbook = rows.slice(0, headerIndex + 1).flatMap(row => row)
+    .some(value => /намунавий|синов маълумоти/i.test(cleanCell(value)));
 
   const title = rows.slice(0, headerIndex)
     .flatMap(row => row)
@@ -113,6 +133,24 @@ export function parseDraftPlanWorkbook(
       responsible: cleanCell(row[columns[6]]),
       distributedUnits: cleanCell(row[columns[7]]),
     });
+    if (hasCompletion) {
+      const [planCode, priorityLabel, category, reviewer, responsibleDepartment] =
+        completionColumns.map(column => cleanCell(row[column]));
+      const priority = priorityLabel.replace(/^[^A-Z]+/, '');
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$/.test(planCode) ||
+          !['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].includes(priority) ||
+          category !== `${currentSection.number}. ${currentSection.title}` ||
+          !reviewer || !responsibleDepartment) {
+        throw new Error('The completed workbook contains invalid or incomplete task fields.');
+      }
+      const item = items[items.length - 1];
+      item.completion = {
+        planCode, priority: priority as NonNullable<DraftPlanItem['completion']>['priority'],
+        category, reviewer, responsibleDepartment,
+        sampleData: sampleWorkbook || /синов маълумоти/i.test(item.responsible + reviewer),
+        ...(/^Синов ижрочиси /i.test(item.responsible) ? { sampleResponsible: item.responsible } : {}),
+      };
+    }
   }
 
   if (!sections.length || !items.length) {
@@ -127,10 +165,18 @@ export function parseDraftPlanWorkbook(
   if (items.some(item => !item.title)) {
     throw new Error('Every numbered work-plan item must have a title.');
   }
+  const codes = items.flatMap(item => item.completion ? [item.completion.planCode] : []);
+  if (new Set(codes).size !== codes.length) {
+    throw new Error('The completed workbook contains duplicate plan codes.');
+  }
+  // The source title mentions the end year (2027); final filenames may omit 2026.
+  // A consistent explicit plan-code year identifies the completed plan instead.
+  const codeYears = new Set(codes.map(code => code.match(/^TT-(20\d{2})-\d+$/)?.[1]).filter(Boolean));
+  if (codeYears.size > 1) throw new Error('The completed workbook contains invalid or incomplete task fields.');
 
   return {
     title,
-    year,
+    year: codeYears.size === 1 ? Number([...codeYears][0]) : year,
     sourceName: sourceName.replace(/^.*[\\/]/, '').slice(0, 255),
     sections,
     items,

@@ -226,6 +226,10 @@ describe('atomic imports and preserved legacy migrations', () => {
         oversight: 'Source oversight',
         responsible: 'Source role',
         distributedUnits: 'Source unit',
+        completion: {
+          planCode: 'TT-2026-001', priority: 'HIGH', category: 'I. Test section',
+          reviewer: 'Синов тақризчиси RV-001', responsibleDepartment: 'Source unit', sampleData: true,
+        },
       }],
     };
     const preview = await request(admin, '/admin/work-plans/draft-import/preview', 'POST', plan);
@@ -242,6 +246,15 @@ describe('atomic imports and preserved legacy migrations', () => {
     expect(stored.status).toBe(200);
     expect(stored.body.items[0].schedule).toBe('2026 Q4\n2027 Q1');
     expect(stored.body.items[0].responsible).toBe('Source role');
+    expect(stored.body.items[0].completion.planCode).toBe('TT-2026-001');
+    expect(stored.body.items[0].completion.sampleData).toBe(true);
+    const invalidCompletion = structuredClone(plan);
+    invalidCompletion.items[0].completion.priority = 'URGENT';
+    expect((await request(admin, '/admin/work-plans/draft-import/preview', 'POST', invalidCompletion)).status).toBe(400);
+    invalidCompletion.items[0].completion.priority = 'HIGH';
+    invalidCompletion.items[0].completion.category = 'II. Wrong section';
+    expect((await request(admin, '/admin/work-plans/draft-import/preview', 'POST', invalidCompletion)).body.errors)
+      .toContain('The completed workbook contains invalid or incomplete task fields.');
     expect((await database.query('SELECT id FROM ut_tasks WHERE work_plan_id=$1', [imported.body.id])).rowCount).toBe(0);
     const adminState = await request(admin, '/state');
     expect(adminState.body.workPlans.some(plan => plan.id === imported.body.id)).toBe(true);

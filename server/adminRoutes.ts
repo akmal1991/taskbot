@@ -42,6 +42,15 @@ const draftPlanItemInput = z.object({
   oversight: z.string().max(5000),
   responsible: z.string().max(5000),
   distributedUnits: z.string().max(10000),
+  completion: z.object({
+    planCode: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{1,99}$/),
+    priority: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']),
+    category: z.string().trim().min(1).max(1000),
+    reviewer: z.string().trim().min(1).max(5000),
+    responsibleDepartment: z.string().trim().min(1).max(5000),
+    sampleData: z.boolean(),
+    sampleResponsible: z.string().trim().min(1).max(5000).optional(),
+  }).strict().optional(),
 }).strict();
 const draftPlanInput = z.object({
   title: z.string().trim().min(1).max(1000),
@@ -66,6 +75,13 @@ function validateDraftPlan(plan: z.infer<typeof draftPlanInput>) {
   if (plan.items.some(item => !item.title.trim())) {
     errors.push('Every numbered work-plan item must have a title.');
   }
+  const completed = plan.items.filter(item => item.completion);
+  if (completed.length && (completed.length !== plan.items.length ||
+      completed.some(item => item.completion!.category !== `${item.sectionNumber}. ${item.sectionTitle}`))) {
+    errors.push('The completed workbook contains invalid or incomplete task fields.');
+  }
+  const codes = completed.map(item => item.completion!.planCode);
+  if (new Set(codes).size !== codes.length) errors.push('The completed workbook contains duplicate plan codes.');
   return errors;
 }
 async function membership(db: pg.PoolClient, userId: string, departmentId?: string | null) {
@@ -83,6 +99,7 @@ export function adminRoutes(database: pg.Pool) {
         data->>'draftImportKind' AS "draftImportKind",
         NULLIF(data->>'itemCount','')::int AS "draftItemCount",
         data->>'sourceName' AS "sourceName"
+        ,data->'completedWorkbook'->>'sourceName' AS "completedSourceName"
         FROM ut_work_plans ORDER BY year DESC,title`),
       database.query('SELECT * FROM ut_sections ORDER BY number'), database.query('SELECT * FROM ut_categories ORDER BY name'),
       database.query(`SELECT i.*,u.full_name AS operator_name FROM ut_import_jobs i JOIN ut_users u ON u.id=i.operator_id ORDER BY i.created_at DESC LIMIT 100`),

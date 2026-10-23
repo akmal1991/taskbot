@@ -108,6 +108,11 @@ export const DraftPlanImportPanel: React.FC<Props> = ({ plans, t, onCommitted })
         <article key={`${item.sectionNumber}-${item.number}`} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
           <h4 className="font-semibold">{item.number}. {item.title}</h4>
           <p className="mt-1 text-xs text-slate-500">{item.sectionNumber} · {item.sectionTitle}</p>
+          {item.completion?.sampleData && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              {t('Sample data — not real staff assignments')}
+            </p>
+          )}
           <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
             {([
               ['Mechanism', item.mechanism],
@@ -116,6 +121,12 @@ export const DraftPlanImportPanel: React.FC<Props> = ({ plans, t, onCommitted })
               ['Oversight', item.oversight],
               ['Responsible', item.responsible],
               ['Distributed units', item.distributedUnits],
+              ['Workbook plan code', item.completion?.planCode],
+              ['Workbook priority', item.completion?.priority ? t(item.completion.priority) : ''],
+              ['Work-plan category', item.completion?.category],
+              ['Reviewer (source or sample)', item.completion?.reviewer],
+              ['Suggested responsible department', item.completion?.responsibleDepartment],
+              ['Sample execution responsibility', item.completion?.sampleResponsible],
             ] as const).filter(([, value]) => value).map(([label, value]) => (
               <div key={label} className="min-w-0">
                 <dt className="text-xs font-medium text-slate-500">{t(label)}</dt>
@@ -209,6 +220,7 @@ export const DraftPlanImportPanel: React.FC<Props> = ({ plans, t, onCommitted })
                 <div className="min-w-0">
                   <p className="font-medium">{plan.title}</p>
                   <p className="mt-1 text-xs text-slate-500">{plan.year} · {plan.draftItemCount || 0} {t('Items')} · {plan.sourceName}</p>
+                   {plan.completedSourceName && <p className="mt-1 text-xs text-slate-500">{t('Completed workbook')}: {plan.completedSourceName}</p>}
                 </div>
                 <button
                   type="button"

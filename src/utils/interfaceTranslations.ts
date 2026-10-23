@@ -2523,6 +2523,16 @@ for (const [key, [ru, uz]] of Object.entries(secureAccountCopy)) interfaceTransl
 for (const [key, [ru, uz, en]] of Object.entries(securityCopy)) interfaceTranslations[key] = { en: en || key, ru, 'uz-Latn': uz };
 
 const draftPlanCopy: Record<string, [string, string]> = {
+  'Sample data — not real staff assignments': ['Пример данных — не реальные назначения сотрудникам', 'Namunaviy ma’lumotlar — haqiqiy xodimlarga tayinlov emas'],
+  'Workbook plan code': ['Код плана из книги', 'Ish kitobidagi reja kodi'],
+  'Workbook priority': ['Приоритет из книги', 'Ish kitobidagi ustuvorlik'],
+  'Work-plan category': ['Категория рабочего плана', 'Ish rejasi toifasi'],
+  'Reviewer (source or sample)': ['Рецензент (источник или пример)', 'Taqrizchi (manba yoki namuna)'],
+  'Suggested responsible department': ['Предлагаемое ответственное подразделение', 'Taklif etilgan mas’ul bo‘linma'],
+  'Sample execution responsibility': ['Пример ответственного исполнителя', 'Namunaviy ijro mas’uliyati'],
+  'Completed workbook': ['Заполненная книга', 'To‘ldirilgan ish kitobi'],
+  'The completed workbook contains invalid or incomplete task fields.': ['Заполненная книга содержит неверные или неполные поля заданий.', 'To‘ldirilgan ish kitobida noto‘g‘ri yoki to‘liq bo‘lmagan topshiriq maydonlari mavjud.'],
+  'The completed workbook contains duplicate plan codes.': ['В заполненной книге повторяются коды плана.', 'To‘ldirilgan ish kitobida reja kodlari takrorlangan.'],
   'Unassigned draft plan import': ['Импорт чернового плана без исполнителей', 'Biriktirilmagan ish rejasi qoralamasini import qilish'],
   'No live tasks, priorities, or staff assignments will be created. Source schedule text is kept as written.': [
     'Активные задания, приоритеты и назначения сотрудникам созданы не будут. Сроки сохраняются в исходном виде.',

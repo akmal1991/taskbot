@@ -31,6 +31,13 @@ There are exactly three active roles: `ADMIN`, `DIRECTOR`, `WORKER`. Department 
 not roles. Do not reintroduce demo logins, browser-authoritative records, or client-selected identity.
 The official source records are archival material, not automatically seeded accounts/tasks.
 
+Completed workbook fields are displayed on saved draft items, not treated as real staff assignments.
+To enrich an existing matching draft in Preview, run
+`bun scripts/import-final-work-plan.ts path/to/completed.xlsx` for a dry run, then add `--commit`.
+This development-only command preserves source fields, stores clearly labeled sample metadata separately,
+audits the change, refuses source/reviewed-data conflicts, and is idempotent for the same workbook.
+It never creates staff accounts, live tasks, departments, deadlines, or notifications.
+
 No default administrator is created. In workspace secrets, set `BOOTSTRAP_ADMIN_USERNAME`,
 `BOOTSTRAP_ADMIN_EMAIL`, and `BOOTSTRAP_ADMIN_PASSWORD` (12–128 characters), run `bun run provision:admin`,
 then remove the bootstrap password. The command refuses an existing active administrator.

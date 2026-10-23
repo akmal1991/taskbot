@@ -55,4 +55,35 @@ describe('draft work-plan workbook import', () => {
     expect(() => parseDraftPlanWorkbook(unsupported, 'ToshTech_2026.xlsx'))
       .toThrow('not a supported ToshTech work-plan workbook');
   });
+  const completedHeaders = [...headers, 'Режа коди', 'Устуворлик (намунавий тақсимот)',
+    'Иш режаси тоифаси (манба бўлимидан)', 'Тақризчи (манба / синов маълумоти)',
+    'Масъул бўлинма (намунавий тақсимот)'];
+  const completedRow = [1, 'Task', 'Mechanism', '2026 Q4\n2027 Q1', 'Source funding', '',
+    'Синов ижрочиси EX-001 (синов маълумоти)', 'Source unit',
+    'TT-2026-001', '🟠 HIGH', 'I. Section', 'Синов тақризчиси RV-001', 'Source unit'];
+  it('imports final fields and uses the code year when the filename omits it', () => {
+    const plan = parseDraftPlanWorkbook(workbookBuffer([
+      ['2027 йил сентябрь ойига қадар иш режаси', '', 'НАМУНАВИЙ МАЪЛУМОТ'],
+      completedHeaders, ['I. Section'], completedRow,
+    ]), 'ToshTech_Work_Plan_Final.xlsx');
+    expect(plan.year).toBe(2026);
+    expect(plan.items[0].completion).toEqual({
+      planCode: 'TT-2026-001', priority: 'HIGH', category: 'I. Section',
+      reviewer: 'Синов тақризчиси RV-001', responsibleDepartment: 'Source unit',
+      sampleData: true, sampleResponsible: String(completedRow[6]),
+    });
+    expect(plan.items[0]).not.toHaveProperty('assignedToId');
+  });
+  it('rejects invalid final priorities, categories, missing fields and duplicate plan codes', () => {
+    for (const [index, value] of [[9, 'URGENT'], [10, 'II. Wrong section'], [11, '']] as const) {
+      const row = [...completedRow]; row[index] = value;
+      expect(() => parseDraftPlanWorkbook(workbookBuffer([
+        ['2027 plan'], completedHeaders, ['I. Section'], row,
+      ]), 'Final.xlsx')).toThrow('invalid or incomplete task fields');
+    }
+    const duplicate = [...completedRow]; duplicate[0] = 2;
+    expect(() => parseDraftPlanWorkbook(workbookBuffer([
+      ['2027 plan'], completedHeaders, ['I. Section'], completedRow, duplicate,
+    ]), 'Final.xlsx')).toThrow('duplicate plan codes');
+  });
 });
