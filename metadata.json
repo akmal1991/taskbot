@@ -1,0 +1,7 @@
+{
+  "name": "UniTask Platform - ToshTech Work Plan Oversight & TMA Automation",
+  "description": "Production-grade task management, operational oversight, and Telegram Mini App automation platform for ToshTech 2026–2027 Annual Work Plan execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
