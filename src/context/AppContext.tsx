@@ -14,14 +14,9 @@ import {
   TaskComment 
 } from '../types';
 import { 
-  INITIAL_DEPARTMENTS, 
   INITIAL_USERS, 
-  INITIAL_TASKS, 
-  INITIAL_AUDIT_LOGS, 
-  INITIAL_QUEUE_JOBS, 
-  INITIAL_NOTIFICATIONS, 
-  INITIAL_TICKETS 
 } from '../data/mockData';
+import { AppStorageStatus, loadAppData, saveAppData } from '../utils/appStorage';
 
 interface AppContextType {
   currentUser: User;
@@ -39,6 +34,7 @@ interface AppContextType {
   queueJobs: QueueJob[];
   notifications: TelegramNotification[];
   tickets: ServiceDeskTicket[];
+  storageStatus: AppStorageStatus;
   isTmaOpen: boolean;
   activeTmaTaskId: string | null;
   openTma: (taskId?: string) => void;
@@ -75,14 +71,22 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [currentUser, setCurrentUser] = useState<User>(INITIAL_USERS[0]); // Starts as DIRECTOR
-  const [language, setLanguage] = useState<Language>('uz_latn');
+  const [initialData] = useState(loadAppData);
+  const [users, setUsers] = useState<User[]>(initialData.users);
+  const [currentUser, setCurrentUser] = useState<User>(() =>
+    initialData.users.find(user => user.id === initialData.currentUserId) || initialData.users[0] || INITIAL_USERS[0]
+  );
+  const [language, setLanguage] = useState<Language>(initialData.language);
+  const [storageStatus, setStorageStatus] = useState<AppStorageStatus>(initialData.storageStatus);
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('unitask_theme') as 'light' | 'dark' | null;
-      if (savedTheme === 'light' || savedTheme === 'dark') {
-        return savedTheme;
+      try {
+        const savedTheme = localStorage.getItem('unitask_theme') as 'light' | 'dark' | null;
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+          return savedTheme;
+        }
+      } catch {
+        // Continue with the system preference if browser storage is disabled.
       }
       if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
         return 'dark';
@@ -94,7 +98,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setTheme = (newTheme: 'light' | 'dark') => {
     setThemeState(newTheme);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('unitask_theme', newTheme);
+      try {
+        localStorage.setItem('unitask_theme', newTheme);
+      } catch {
+        // Theme changes should still work when browser storage is disabled.
+      }
       if (newTheme === 'dark') {
         document.documentElement.classList.add('dark');
         document.documentElement.setAttribute('data-theme', 'dark');
@@ -121,12 +129,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [theme]);
 
-  const [departments, setDepartments] = useState<Department[]>(INITIAL_DEPARTMENTS);
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
-  const [queueJobs, setQueueJobs] = useState<QueueJob[]>(INITIAL_QUEUE_JOBS);
-  const [notifications, setNotifications] = useState<TelegramNotification[]>(INITIAL_NOTIFICATIONS);
-  const [tickets, setTickets] = useState<ServiceDeskTicket[]>(INITIAL_TICKETS);
+  const [departments, setDepartments] = useState<Department[]>(initialData.departments);
+  const [tasks, setTasks] = useState<Task[]>(initialData.tasks);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialData.auditLogs);
+  const [queueJobs, setQueueJobs] = useState<QueueJob[]>(initialData.queueJobs);
+  const [notifications, setNotifications] = useState<TelegramNotification[]>(initialData.notifications);
+  const [tickets, setTickets] = useState<ServiceDeskTicket[]>(initialData.tickets);
+
+  useEffect(() => {
+    if (!initialData.canPersist) return;
+
+    try {
+      saveAppData({
+        users,
+        departments,
+        tasks,
+        auditLogs,
+        queueJobs,
+        notifications,
+        tickets,
+        currentUserId: currentUser.id,
+        language,
+      });
+      if (storageStatus !== 'recovered') {
+        setStorageStatus('saved');
+      }
+    } catch {
+      setStorageStatus('unavailable');
+    }
+  }, [
+    initialData.canPersist,
+    users,
+    departments,
+    tasks,
+    auditLogs,
+    queueJobs,
+    notifications,
+    tickets,
+    currentUser.id,
+    language,
+    storageStatus,
+  ]);
   
   // TMA Simulator State
   const [isTmaOpen, setIsTmaOpen] = useState<boolean>(false);
@@ -653,6 +696,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         queueJobs,
         notifications,
         tickets,
+        storageStatus,
         isTmaOpen,
         activeTmaTaskId,
         openTma,
