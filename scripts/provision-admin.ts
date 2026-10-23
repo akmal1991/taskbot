@@ -18,6 +18,13 @@ try {
   });
   console.log('First administrator provisioned. Remove the bootstrap password from the environment after use.');
 } catch (error) {
-  console.error(error instanceof z.ZodError ? 'Set valid BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_EMAIL, and BOOTSTRAP_ADMIN_PASSWORD (12–128 characters) in workspace secrets.' : (error as Error).message);
+  if (error instanceof z.ZodError) {
+    const fields = [...new Set(error.issues.map(issue => issue.path.join('.')))].join(', ');
+    console.error(`Bootstrap values failed validation for: ${fields || 'configuration'}. Username: 3–64 letters/numbers/dot/underscore/hyphen; email: valid email; password: 12–128 characters. Secret values were not logged.`);
+  } else if (error instanceof Error && error.message.startsWith('An active administrator already exists.')) {
+    console.error(error.message);
+  } else {
+    console.error('Provisioning failed. Check database connectivity and account uniqueness. Secret values were not logged.');
+  }
   process.exitCode = 1;
 } finally { await pool.end(); }
