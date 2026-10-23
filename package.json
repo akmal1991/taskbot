@@ -11,6 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "bun test",
+    "test:preview": "bash scripts/smoke-preview.sh",
     "test:auth": "bun test server/telegramAuth.test.ts",
     "test:excel": "bun test src/utils/excel.test.ts"
   },
