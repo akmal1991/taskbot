@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Archive, Building2, Check, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Cog, Download, KeyRound, Layers3, LoaderCircle, Play, Plus, RefreshCw, RotateCcw, Search, Shield, Trash2, Upload, UsersRound } from 'lucide-react';
 import { api } from '../utils/api';
 import { useApp } from '../context/AppContext';
+import { DraftPlanImportPanel } from './DraftPlanImportPanel';
 import { PERMISSIONS, ROLES, type Role } from '../../shared/policy';
 import type { Task } from '../types';
 import { localizeText } from '../utils/i18n';
@@ -186,6 +187,7 @@ export const AdminPanel: React.FC = () => {
         </section>}
 
         {area === 'plans' && <div className="space-y-5">
+          <DraftPlanImportPanel plans={overview.workPlans} t={t} onCommitted={refreshAll} />
           <section className={`${cardClass} overflow-hidden`}><SectionHeader title={t('Work plans')} actionLabel={t('Add work plan')} onAdd={() => openForm('plan')} />
             <div className="divide-y divide-slate-100 dark:divide-slate-800">{overview.workPlans.map((plan: any) => <div key={plan.id} className="p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold">{plan.title}</p><p className="mt-1 text-xs text-slate-500">{plan.year} · {plan.sections?.length || 0} {t('sections')}</p></div><div className="flex gap-2"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{t(plan.active ? 'Active' : 'Inactive')}</span><AdminButton onClick={() => openForm('plan', plan)}>{t('Edit')}</AdminButton><AdminButton onClick={() => openForm('section', { workPlanId: plan.id })}><Plus size={14} />{t('Add section')}</AdminButton></div></div>
               {!!plan.sections?.length && <div className="mt-3 grid gap-2 sm:grid-cols-2">{plan.sections.map((section: any) => <div key={section.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800"><span><b>{section.number}</b> · {section.title}</span><AdminButton onClick={() => openForm('section', { ...section, workPlanId: plan.id })}>{t('Edit')}</AdminButton></div>)}</div>}</div>)}</div>

@@ -2521,3 +2521,84 @@ const secureAccountCopy: Record<string, [string, string]> = {
 };
 for (const [key, [ru, uz]] of Object.entries(secureAccountCopy)) interfaceTranslations[key] = { en: key, ru, 'uz-Latn': uz };
 for (const [key, [ru, uz, en]] of Object.entries(securityCopy)) interfaceTranslations[key] = { en: en || key, ru, 'uz-Latn': uz };
+
+const draftPlanCopy: Record<string, [string, string]> = {
+  'Unassigned draft plan import': ['Импорт чернового плана без исполнителей', 'Biriktirilmagan ish rejasi qoralamasini import qilish'],
+  'No live tasks, priorities, or staff assignments will be created. Source schedule text is kept as written.': [
+    'Активные задания, приоритеты и назначения сотрудникам созданы не будут. Сроки сохраняются в исходном виде.',
+    'Faol topshiriqlar, ustuvorliklar yoki xodimlarga tayinlovlar yaratilmaydi. Manbadagi muddat matni aynanligicha saqlanadi.',
+  ],
+  'Upload the original work-plan Excel file': ['Загрузите исходный файл плана Excel', 'Ish rejasining asl Excel faylini yuklang'],
+  'Please select an Excel .xlsx file.': ['Выберите файл Excel в формате .xlsx.', 'Excel .xlsx faylini tanlang.'],
+  'The selected file is larger than the 10 MB limit.': ['Размер выбранного файла превышает 10 МБ.', 'Tanlangan fayl hajmi 10 MB chegarasidan katta.'],
+  'Preview import': ['Предварительный просмотр', 'Importni ko‘rib chiqish'],
+  'Importing...': ['Импорт выполняется...', 'Import qilinmoqda...'],
+  'Import failed.': ['Импорт не выполнен.', 'Import amalga oshmadi.'],
+  'Source file': ['Исходный файл', 'Manba fayl'],
+  'Draft plan preview': ['Предварительный просмотр чернового плана', 'Ish rejasi qoralamasini ko‘rib chiqish'],
+  'Items': ['Пункты', 'Bandlar'],
+  'Import draft plan': ['Импортировать черновой план', 'Ish rejasi qoralamasini import qilish'],
+  'Import completed. The plan is stored as an inactive draft.': [
+    'Импорт завершен. План сохранен как неактивный черновик.',
+    'Import yakunlandi. Reja faol bo‘lmagan qoralama sifatida saqlandi.',
+  ],
+  'Saved unassigned draft plans': ['Сохраненные черновые планы без исполнителей', 'Saqlangan biriktirilmagan ish rejalari'],
+  'No draft plans imported yet.': ['Черновые планы еще не импортированы.', 'Hali ish rejalari qoralamasi import qilinmagan.'],
+  'View items': ['Посмотреть пункты', 'Bandlarni ko‘rish'],
+  'Hide items': ['Скрыть пункты', 'Bandlarni yashirish'],
+  'Mechanism': ['Механизм реализации', 'Amalga oshirish mexanizmi'],
+  'Schedule': ['Срок выполнения', 'Bajarish muddati'],
+  'Funding source': ['Источник финансирования', 'Moliyalashtirish manbasi'],
+  'Oversight': ['Контроль', 'Nazorat'],
+  'Responsible': ['Ответственный', 'Mas’ul'],
+  'Distributed units': ['Распределенные подразделения', 'Taqsimlangan bo‘linmalar'],
+  'Only the first 12 items appear in this preview; all items are saved.': [
+    'В предварительном просмотре показаны первые 12 пунктов; сохраняются все пункты.',
+    'Ko‘rib chiqishda faqat dastlabki 12 band ko‘rsatiladi; barcha bandlar saqlanadi.',
+  ],
+  'The workbook has no sheets.': ['В книге нет листов.', 'Ish kitobida varaqlar yo‘q.'],
+  'This is not a supported ToshTech work-plan workbook.': ['Формат файла не соответствует рабочему плану ToshTech.', 'Bu ToshTech ish rejasi uchun mos Excel formati emas.'],
+  'The workbook is missing required work-plan columns.': ['В книге отсутствуют обязательные столбцы плана.', 'Ish rejasidagi zarur ustunlar faylda yo‘q.'],
+  'The workbook title is missing.': ['В книге отсутствует название плана.', 'Ish rejasining sarlavhasi faylda yo‘q.'],
+  'Could not determine the work-plan year from the file name or title.': [
+    'Не удалось определить год плана по имени файла или названию.',
+    'Fayl nomi yoki sarlavhadan ish rejasining yilini aniqlab bo‘lmadi.',
+  ],
+  'Work-plan item {number} is missing a section heading.': [
+    'Для пункта плана {number} не указан раздел.',
+    '{number}-reja bandi uchun bo‘lim ko‘rsatilmagan.',
+  ],
+  'A numbered work-plan item is missing its section heading.': [
+    'Для пронумерованного пункта плана не указан раздел.',
+    'Raqamlangan ish rejasi bandi uchun bo‘lim ko‘rsatilmagan.',
+  ],
+  'No numbered work-plan items were found.': ['Не найдены пронумерованные пункты плана.', 'Raqamlangan ish rejasi bandlari topilmadi.'],
+  'The workbook contains duplicate section or item numbers.': [
+    'В книге повторяются номера разделов или пунктов.',
+    'Ish kitobida bo‘lim yoki band raqamlari takrorlangan.',
+  ],
+  'Every numbered work-plan item must have a title.': [
+    'У каждого пронумерованного пункта должно быть название.',
+    'Raqamlangan har bir ish rejasi bandida sarlavha bo‘lishi kerak.',
+  ],
+  'Each work-plan item must refer to one of the plan sections.': [
+    'Каждый пункт плана должен относиться к одному из разделов.',
+    'Har bir ish rejasi bandi reja bo‘limlaridan biriga tegishli bo‘lishi kerak.',
+  ],
+  'A work plan with this title and year or source file is already imported.': [
+    'План с таким названием и годом или исходным файлом уже импортирован.',
+    'Bunday nom va yilga ega yoki shu manba faylidan olingan ish rejasi avval import qilingan.',
+  ],
+  'The preview no longer matches this draft plan. Preview it again before importing.': [
+    'Предварительный просмотр больше не соответствует черновому плану. Повторите просмотр перед импортом.',
+    'Ko‘rib chiqish ma’lumotlari ish rejasi qoralamasiga mos emas. Importdan oldin qayta ko‘rib chiqing.',
+  ],
+  'Unassigned draft plan was not found.': ['Черновой план без исполнителей не найден.', 'Biriktirilmagan ish rejasi qoralamasi topilmadi.'],
+  'Unassigned draft plans cannot be activated before their items are assigned.': [
+    'Черновой план нельзя активировать до назначения исполнителей его пунктам.',
+    'Qoralama bandlariga mas’ullar tayinlanmaguncha rejani faollashtirib bo‘lmaydi.',
+  ],
+};
+for (const [key, [ru, uz]] of Object.entries(draftPlanCopy)) {
+  interfaceTranslations[key] = { en: key, ru, 'uz-Latn': uz };
+}

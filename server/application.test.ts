@@ -209,6 +209,58 @@ describe('atomic imports and preserved legacy migrations', () => {
     const valid = [inputTask('IMPORT-OK')], ready = await request(admin,'/imports/preview','POST',{tasks:valid});
     expect((await request(admin,'/imports/commit','POST',{tasks:valid,digest:ready.body.digest})).status).toBe(201);
   });
+  it('stores draft-plan source items without creating live tasks or exposing them to non-admins', async () => {
+    const plan = {
+      title: 'ToshTech draft import test',
+      year: 2026,
+      sourceName: 'ToshTech_2026_2027.xlsx',
+      sections: [{ number: 'I', title: 'Test section' }],
+      items: [{
+        number: 1,
+        sectionNumber: 'I',
+        sectionTitle: 'Test section',
+        title: 'Draft-only item',
+        mechanism: 'Source mechanism text',
+        schedule: '2026 Q4\n2027 Q1',
+        fundingSource: 'Source funding',
+        oversight: 'Source oversight',
+        responsible: 'Source role',
+        distributedUnits: 'Source unit',
+      }],
+    };
+    const preview = await request(admin, '/admin/work-plans/draft-import/preview', 'POST', plan);
+    expect(preview.status).toBe(200);
+    expect(preview.body.errors).toEqual([]);
+    const imported = await request(admin, '/admin/work-plans/draft-import/commit', 'POST', {
+      plan,
+      digest: preview.body.digest,
+    });
+    expect(imported.status).toBe(201);
+    expect(imported.body.active).toBe(false);
+
+    const stored = await request(admin, `/admin/work-plans/${imported.body.id}/draft-items`);
+    expect(stored.status).toBe(200);
+    expect(stored.body.items[0].schedule).toBe('2026 Q4\n2027 Q1');
+    expect(stored.body.items[0].responsible).toBe('Source role');
+    expect((await database.query('SELECT id FROM ut_tasks WHERE work_plan_id=$1', [imported.body.id])).rowCount).toBe(0);
+    const adminState = await request(admin, '/state');
+    expect(adminState.body.workPlans.some(plan => plan.id === imported.body.id)).toBe(true);
+    expect(JSON.stringify(adminState.body)).not.toContain('Source mechanism text');
+    const overview = await request(admin, '/admin/overview');
+    const draftMetadata = overview.body.workPlans.find(plan => plan.id === imported.body.id);
+    expect(draftMetadata.draftImportKind).toBe('UNASSIGNED_DRAFT');
+    expect(draftMetadata.draftItemCount).toBe(1);
+    expect(draftMetadata.sourceName).toBe(plan.sourceName);
+    expect(draftMetadata).not.toHaveProperty('data');
+    const directorState = await request(director, '/state');
+    expect(directorState.body.workPlans.some(plan => plan.id === imported.body.id)).toBe(false);
+    expect(JSON.stringify(directorState.body)).not.toContain('Source mechanism text');
+
+    const duplicate = await request(admin, '/admin/work-plans/draft-import/preview', 'POST', plan);
+    expect(duplicate.body.errors.length).toBeGreaterThan(0);
+    expect((await request(admin, `/admin/work-plans/${imported.body.id}`, 'PATCH', { active: true })).status).toBe(400);
+    expect((await request(director, `/admin/work-plans/${imported.body.id}/draft-items`)).status).toBe(403);
+  });
   it('requires explicit legacy role mapping and preserves original source, evidence and actor history', async () => {
     const snapshot = { users:[
       {id:'legacy-head',fullName:'Legacy coordinator',email:'coordinator@example.test',role:'HEAD',departmentId:'legacy-dept'},

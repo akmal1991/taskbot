@@ -1,3 +1,4 @@
 - [Bun lockfile compatibility](bun-lockfile-compatibility.md) — Replit's configured Bun may reject imported lockfiles written by a newer release.
 - [Tailwind scan boundaries](post-merge-build-budget.md) — workspace-wide scanning caused multi-minute builds; keep scanning limited to actual UI sources.
 - [Runtime tool availability](runtime-tool-availability.md) — declared Node modules do not guarantee node/node-gyp are available in package lifecycle scripts.
+- [Unassigned work-plan drafts](draft-workplans.md) — Keep source items inactive and separate from live tasks until administrators map them explicitly.

@@ -48,8 +48,13 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       database.query('SELECT * FROM ut_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200', [actor.id]),
       database.query(`SELECT t.*,u.full_name,u.email,u.data,d.name AS department_name FROM ut_tickets t JOIN ut_users u ON u.id=t.user_id
         JOIN ut_departments d ON d.id=t.department_id WHERE ($1::boolean OR t.user_id=$2) ORDER BY t.created_at DESC`, [actor.permissions.includes('tickets.resolve'), actor.id]),
-      database.query(`SELECT DISTINCT p.* FROM ut_work_plans p LEFT JOIN ut_tasks t ON t.work_plan_id=p.id WHERE ($1::boolean OR t.assignee_id=$2) ORDER BY p.year DESC`, [actor.role !== 'WORKER', actor.id]),
-      database.query(`SELECT DISTINCT s.* FROM ut_sections s LEFT JOIN ut_tasks t ON t.section_id=s.id WHERE ($1::boolean OR t.assignee_id=$2) ORDER BY s.number`, [actor.role !== 'WORKER', actor.id]),
+      database.query(`SELECT DISTINCT p.id,p.title,p.year,p.active FROM ut_work_plans p LEFT JOIN ut_tasks t ON t.work_plan_id=p.id
+        WHERE ($1::boolean OR t.assignee_id=$2) AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
+        ORDER BY p.year DESC`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
+      database.query(`SELECT DISTINCT s.* FROM ut_sections s JOIN ut_work_plans p ON p.id=s.work_plan_id
+        LEFT JOIN ut_tasks t ON t.section_id=s.id WHERE ($1::boolean OR t.assignee_id=$2)
+        AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
+        ORDER BY s.number`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
       database.query('SELECT * FROM ut_categories WHERE active=true ORDER BY name'),
       actor.role === 'ADMIN' ? database.query("SELECT * FROM ut_settings WHERE key LIKE 'job:%'") : Promise.resolve({ rows: [] }),
     ]);

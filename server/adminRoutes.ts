@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { ROLES, ROLE_CEILINGS, effectivePermissions } from '../shared/policy';
 import { audit, HttpError, id, publicUser, transaction } from './db';
-import { issueAccountToken, permit, wrap } from './security';
+import { digest, issueAccountToken, permit, wrap } from './security';
 import { getTasks } from './records';
 import { runNotificationJob, readSettings } from './notifications';
 export const usersSelect = `SELECT u.*,d.name AS department_name FROM ut_users u LEFT JOIN ut_departments d ON d.id=u.department_id`;
@@ -27,6 +27,47 @@ const accountInput = z.object({
   departmentId: z.string().max(128).nullable().optional(), phone: z.string().max(40).optional(),
 });
 const departmentInput = z.object({ code: shortText.max(30), name: shortText, coordinatorId: z.string().max(128).nullable().optional() });
+const draftPlanSectionInput = z.object({
+  number: z.string().trim().min(1).max(30),
+  title: z.string().trim().min(1).max(500),
+}).strict();
+const draftPlanItemInput = z.object({
+  number: z.number().int().min(1).max(100000),
+  sectionNumber: z.string().trim().min(1).max(30),
+  sectionTitle: z.string().trim().min(1).max(500),
+  title: z.string().trim().min(1).max(2000),
+  mechanism: z.string().max(32767),
+  schedule: z.string().max(10000),
+  fundingSource: z.string().max(5000),
+  oversight: z.string().max(5000),
+  responsible: z.string().max(5000),
+  distributedUnits: z.string().max(10000),
+}).strict();
+const draftPlanInput = z.object({
+  title: z.string().trim().min(1).max(1000),
+  year: z.number().int().min(2000).max(2200),
+  sourceName: z.string().trim().min(1).max(255),
+  sections: z.array(draftPlanSectionInput).min(1).max(50),
+  items: z.array(draftPlanItemInput).min(1).max(2000),
+}).strict();
+
+function validateDraftPlan(plan: z.infer<typeof draftPlanInput>) {
+  const errors: string[] = [];
+  const sectionNumbers = plan.sections.map(section => section.number);
+  const itemNumbers = plan.items.map(item => item.number);
+  if (new Set(sectionNumbers).size !== sectionNumbers.length ||
+      new Set(itemNumbers).size !== itemNumbers.length) {
+    errors.push('The workbook contains duplicate section or item numbers.');
+  }
+  const sectionByNumber = new Map(plan.sections.map(section => [section.number, section.title]));
+  if (plan.items.some(item => sectionByNumber.get(item.sectionNumber) !== item.sectionTitle)) {
+    errors.push('Each work-plan item must refer to one of the plan sections.');
+  }
+  if (plan.items.some(item => !item.title.trim())) {
+    errors.push('Every numbered work-plan item must have a title.');
+  }
+  return errors;
+}
 async function membership(db: pg.PoolClient, userId: string, departmentId?: string | null) {
   if (!departmentId) return;
   if (!(await db.query('SELECT id FROM ut_departments WHERE id=$1 AND active=true', [departmentId])).rowCount) throw new HttpError(400, 'Choose an active department.');
@@ -38,7 +79,11 @@ export function adminRoutes(database: pg.Pool) {
   router.get('/overview', wrap(async (req, res) => {
     const [users, departments, roles, plans, sections, categories, imports, deliveries, stats] = await Promise.all([
       database.query(`${usersSelect} ORDER BY u.full_name`), getDepartments(database),
-      database.query('SELECT * FROM ut_role_permissions'), database.query('SELECT * FROM ut_work_plans ORDER BY year DESC,title'),
+      database.query('SELECT * FROM ut_role_permissions'), database.query(`SELECT id,title,year,active,
+        data->>'draftImportKind' AS "draftImportKind",
+        NULLIF(data->>'itemCount','')::int AS "draftItemCount",
+        data->>'sourceName' AS "sourceName"
+        FROM ut_work_plans ORDER BY year DESC,title`),
       database.query('SELECT * FROM ut_sections ORDER BY number'), database.query('SELECT * FROM ut_categories ORDER BY name'),
       database.query(`SELECT i.*,u.full_name AS operator_name FROM ut_import_jobs i JOIN ut_users u ON u.id=i.operator_id ORDER BY i.created_at DESC LIMIT 100`),
       database.query(`SELECT n.*,u.full_name AS recipient_name FROM ut_notifications n JOIN ut_users u ON u.id=n.user_id ORDER BY n.created_at DESC LIMIT 100`),
@@ -138,11 +183,93 @@ export function adminRoutes(database: pg.Pool) {
       await audit(db, req, 'WORK_PLAN_CREATED', planId, null, input);
     }); res.status(201).json({ id: planId });
   }));
+  router.post('/work-plans/draft-import/preview', permit('workplans.manage'), wrap(async (req, res) => {
+    const plan = draftPlanInput.strict().parse(req.body);
+    const errors = validateDraftPlan(plan);
+    const importDigest = digest(JSON.stringify(plan));
+    const existing = await database.query(
+      `SELECT id FROM ut_work_plans
+       WHERE (year=$1 AND lower(title)=lower($2)) OR data->>'draftImportDigest'=$3
+       LIMIT 1`,
+      [plan.year, plan.title, importDigest],
+    );
+    if (existing.rowCount) errors.push('A work plan with this title and year or source file is already imported.');
+    res.json({ digest: importDigest, errors, itemCount: plan.items.length, sectionCount: plan.sections.length });
+  }));
+  router.post('/work-plans/draft-import/commit', permit('workplans.manage'), wrap(async (req, res) => {
+    const input = z.object({ plan: draftPlanInput, digest: z.string().length(64) }).strict().parse(req.body);
+    const plan = input.plan;
+    const errors = validateDraftPlan(plan);
+    if (errors.length) throw new HttpError(400, errors.join(' '));
+    const importDigest = digest(JSON.stringify(plan));
+    if (input.digest !== importDigest) throw new HttpError(409, 'The preview no longer matches this draft plan. Preview it again before importing.');
+
+    const planId = id('plan');
+    const importId = id('import');
+    await transaction(database, async db => {
+      await db.query('SELECT pg_advisory_xact_lock($1)', [741203]);
+      const existing = await db.query(
+        `SELECT id FROM ut_work_plans
+         WHERE (year=$1 AND lower(title)=lower($2)) OR data->>'draftImportDigest'=$3
+         LIMIT 1`,
+        [plan.year, plan.title, importDigest],
+      );
+      if (existing.rowCount) throw new HttpError(409, 'A work plan with this title and year or source file is already imported.');
+
+      const data = {
+        draftImportKind: 'UNASSIGNED_DRAFT',
+        sourceName: plan.sourceName,
+        draftImportDigest: importDigest,
+        itemCount: plan.items.length,
+        sections: plan.sections,
+        items: plan.items,
+      };
+      await db.query(
+        'INSERT INTO ut_work_plans(id,title,year,active,data) VALUES($1,$2,$3,false,$4::jsonb)',
+        [planId, plan.title, plan.year, JSON.stringify(data)],
+      );
+      for (const section of plan.sections) {
+        await db.query('INSERT INTO ut_sections(id,work_plan_id,number,title) VALUES($1,$2,$3,$4)', [
+          id('section'), planId, section.number, section.title,
+        ]);
+      }
+      await db.query(
+        'INSERT INTO ut_import_jobs(id,operator_id,source,row_count,digest,report) VALUES($1,$2,$3,$4,$5,$6::jsonb)',
+        [importId, req.actor!.id, `Draft plan: ${plan.sourceName}`, plan.items.length, importDigest,
+          JSON.stringify({ status: 'UNASSIGNED_DRAFT', importedTasks: 0, itemCount: plan.items.length, sectionCount: plan.sections.length })],
+      );
+      await audit(db, req, 'WORK_PLAN_DRAFT_IMPORTED', planId, null, {
+        sourceName: plan.sourceName,
+        itemCount: plan.items.length,
+        sectionCount: plan.sections.length,
+        importedTasks: 0,
+      });
+    });
+    res.status(201).json({ id: planId, itemCount: plan.items.length, sectionCount: plan.sections.length, active: false });
+  }));
+  router.get('/work-plans/:id/draft-items', permit('workplans.manage'), wrap(async (req, res) => {
+    const row = (await database.query(
+      `SELECT id,title,year,data FROM ut_work_plans
+       WHERE id=$1 AND data->>'draftImportKind'='UNASSIGNED_DRAFT'`,
+      [req.params.id],
+    )).rows[0];
+    if (!row) throw new HttpError(404, 'Unassigned draft plan was not found.');
+    res.json({
+      id: row.id,
+      title: row.title,
+      year: row.year,
+      sourceName: row.data.sourceName,
+      items: row.data.items,
+    });
+  }));
   router.patch('/work-plans/:id', permit('workplans.manage'), wrap(async (req, res) => {
     const input = planInput.partial().extend({ active: z.boolean().optional() }).strict().parse(req.body);
     await transaction(database, async db => {
       const before = (await db.query('SELECT * FROM ut_work_plans WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
       if (!before) throw new HttpError(404, 'Work plan not found.');
+      if (input.active === true && before.data?.draftImportKind === 'UNASSIGNED_DRAFT') {
+        throw new HttpError(400, 'Unassigned draft plans cannot be activated before their items are assigned.');
+      }
       await db.query('UPDATE ut_work_plans SET title=$2,year=$3,active=$4 WHERE id=$1', [before.id, input.title ?? before.title, input.year ?? before.year, input.active ?? before.active]);
       await audit(db, req, 'WORK_PLAN_UPDATED', before.id, before, input);
     }); res.json({ ok: true });
