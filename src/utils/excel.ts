@@ -10,6 +10,157 @@ export interface ImportReport {
   tasksPreview: Partial<Task>[];
 }
 
+export function canApplyExcelImport(report: ImportReport | null, previewTasks: Partial<Task>[]): boolean {
+  return Boolean(report && report.errors.length === 0 && previewTasks.length > 0);
+}
+
+export function commitExcelImportIfValid(
+  report: ImportReport | null,
+  previewTasks: Partial<Task>[],
+  commitTasks: (tasks: Partial<Task>[]) => void
+): boolean {
+  if (!canApplyExcelImport(report, previewTasks)) return false;
+  commitTasks(previewTasks);
+  return true;
+}
+
+export function parseExcelWorkbook(
+  workbook: XLSX.WorkBook,
+  departments: Department[],
+  users: User[]
+): ImportReport {
+  const report: ImportReport = {
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    warnings: [],
+    errors: [],
+    tasksPreview: []
+  };
+
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    report.errors.push("Excel faylda birorta ham varaq (sheet) topilmadi.");
+    return report;
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+  if (rawRows.length === 0) {
+    report.errors.push("Excel fayl bo'sh. Qatorlar topilmadi.");
+    return report;
+  }
+
+  let rowIndex = 2;
+  for (const row of rawRows) {
+    const title = row["Иш режа номи"] || row["Title"] || row["title"] || row["Sarlavha"] || row["Topshiriq nomi"] || row["Nomi"];
+    if (!title || String(title).trim() === '') {
+      report.skipped++;
+      report.errors.push(`Qator ${rowIndex}: Topshiriq nomi bo'sh. Ushbu faylni tuzatib qayta yuklang.`);
+      rowIndex++;
+      continue;
+    }
+
+    const itemNum = Number(row["Т/р"]) || rowIndex - 1;
+    const publicCode = `TT-2026-${String(itemNum).padStart(2, '0')}`;
+    const description = row["Амалга ошириш механизми"] || row["Description"] || row["Tavsif"] || "";
+    const funding = row["Молиялаштириш манбалари"] || row["Funding"] || "Университет маблағлари";
+    const approver = row["Назорат (Проректор)"] || row["Назорат"] || "Ўқув ишлари бўйича проректор (А.Рустамов)";
+    const sectionTitle = row["Бўлим (Йўналиш)"] || row["Бўлим"] || "Умумий йўналиш";
+
+    const deptNameRaw = row["Масъул бўлим"] || row["Department"] || row["Bo'lim"] || "";
+    const normalizedDepartmentName = String(deptNameRaw).toLowerCase().trim();
+    const dept = normalizedDepartmentName
+      ? departments.find(d =>
+        d.name.toLowerCase().includes(normalizedDepartmentName) ||
+        normalizedDepartmentName.includes(d.name.toLowerCase().trim())
+      )
+      : departments[0];
+
+    const workerNameRaw = row["Ижро учун масъул"] || row["Primary Responsible (full name)"] || row["Xodim"] || "";
+    const normalizedWorkerName = String(workerNameRaw).toLowerCase().trim();
+    const worker = normalizedWorkerName
+      ? users.find(u =>
+        u.fullName.toLowerCase().includes(normalizedWorkerName) ||
+        normalizedWorkerName.includes(u.fullName.toLowerCase().trim())
+      )
+      : users.find(u => u.role === 'WORKER') || users[0];
+
+    const priorityRaw = String(row["Муҳимлик даражаси"] || row["Priority"] || "HIGH").toUpperCase().trim();
+    let priority: Task['priority'] = 'HIGH';
+    if (['CRITICAL', 'JUDAYUQORI'].includes(priorityRaw)) priority = 'CRITICAL';
+    else if (['MEDIUM', 'O\'RTACHA'].includes(priorityRaw)) priority = 'MEDIUM';
+    else if (['LOW', 'PAST'].includes(priorityRaw)) priority = 'LOW';
+
+    let deadlineStr = '2027-06-30';
+    const deadlineRaw = row["Бажариш муддати"] || row["Deadline"] || row["Muddat"];
+    if (deadlineRaw) {
+      if (typeof deadlineRaw === 'number') {
+        if (!Number.isFinite(deadlineRaw) || deadlineRaw < 1) {
+          report.errors.push(`Qator ${rowIndex}: Bajarish muddati noto'g'ri Excel sanasi.`);
+          report.skipped++;
+          rowIndex++;
+          continue;
+        }
+        const parsed = new Date((Math.floor(deadlineRaw) - 25569) * 86400 * 1000);
+        if (Number.isNaN(parsed.getTime())) {
+          report.errors.push(`Qator ${rowIndex}: Bajarish muddatini sana sifatida o'qib bo'lmadi.`);
+          report.skipped++;
+          rowIndex++;
+          continue;
+        }
+        deadlineStr = parsed.toISOString().split('T')[0];
+      } else if (typeof deadlineRaw === 'string') {
+        deadlineStr = deadlineRaw.trim();
+      }
+    }
+
+    if (!dept || !worker) {
+      if (!dept) report.errors.push(`Qator ${rowIndex}: Bo'lim "${deptNameRaw}" topilmadi.`);
+      if (!worker) report.errors.push(`Qator ${rowIndex}: Mas'ul xodim "${workerNameRaw}" topilmadi.`);
+      report.skipped++;
+      rowIndex++;
+      continue;
+    }
+
+    const parsedTask: Partial<Task> = {
+      id: `imported-${Date.now()}-${rowIndex}`,
+      itemNumber: itemNum,
+      planCode: publicCode,
+      title: String(title).trim(),
+      description: String(description).trim(),
+      expectedOutcome: "ToshTech 2026–2027 yillik ish rejasi talablariga to'liq erishish",
+      sourceReference: "ToshTech 2027-yil sentyabr oyiga qadar amalga oshiriladigan ishlar REJASI",
+      fundingSource: String(funding).trim(),
+      sectionTitle: String(sectionTitle).trim(),
+      status: 'ASSIGNED',
+      priority,
+      departmentId: dept.id,
+      departmentName: dept.name,
+      assignedToId: worker.id,
+      assignedToName: worker.fullName,
+      assignedToTelegramId: worker.telegramId,
+      assignedToTelegramUsername: worker.telegramUsername,
+      createdById: users[0]?.id || 'user-director',
+      createdByName: users[0]?.fullName || 'Prof. Rustam O. Xoliqov',
+      approverId: 'user-rustamov',
+      approverName: approver,
+      assignedDate: new Date().toISOString().split('T')[0],
+      deadline: deadlineStr,
+      progressPercent: Number(row["Ижро фоизи %"]) || 0,
+      proofs: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    report.tasksPreview.push(parsedTask);
+    report.created++;
+    rowIndex++;
+  }
+
+  return report;
+}
+
 export const OFFICIAL_WORK_PLAN_COLUMNS = [
   "Т/р",
   "Бўлим (Йўналиш)",
@@ -146,119 +297,18 @@ export async function parseExcelWorkPlan(
   departments: Department[],
   users: User[]
 ): Promise<ImportReport> {
-  const report: ImportReport = {
-    created: 0,
-    updated: 0,
-    skipped: 0,
-    warnings: [],
-    errors: [],
-    tasksPreview: []
-  };
-
   try {
     const workbook = XLSX.read(fileBuffer, { type: 'array' });
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) {
-      report.errors.push("Excel faylda birorta ham varaq (sheet) topilmadi.");
-      return report;
-    }
-
-    const worksheet = workbook.Sheets[firstSheetName];
-    const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-    if (rawRows.length === 0) {
-      report.errors.push("Excel fayl bo'sh. Qatorlar topilmadi.");
-      return report;
-    }
-
-    let rowIndex = 2; // header is row 1
-    for (const row of rawRows) {
-      const title = row["Иш режа номи"] || row["Title"] || row["title"] || row["Sarlavha"] || row["Topshiriq nomi"] || row["Nomi"];
-      if (!title || String(title).trim() === '') {
-        report.skipped++;
-        report.warnings.push(`Qator ${rowIndex}: Sarlavha bo'sh bo'lgani sababli o'tkazib yuborildi.`);
-        rowIndex++;
-        continue;
-      }
-
-      const itemNum = Number(row["Т/р"]) || rowIndex - 1;
-      const publicCode = `TT-2026-${String(itemNum).padStart(2, '0')}`;
-      const description = row["Амалга ошириш механизми"] || row["Description"] || row["Tavsif"] || "";
-      const funding = row["Молиялаштириш манбалари"] || row["Funding"] || "Университет маблағлари";
-      const approver = row["Назорат (Проректор)"] || row["Назорат"] || "Ўқув ишлари бўйича проректор (А.Рустамов)";
-      const sectionTitle = row["Бўлим (Йўналиш)"] || row["Бўлим"] || "Умумий йўналиш";
-
-      // Match department
-      const deptNameRaw = row["Масъул бўлим"] || row["Department"] || row["Bo'lim"] || "";
-      const dept = departments.find(d => 
-        d.name.toLowerCase().includes(String(deptNameRaw).toLowerCase().trim()) ||
-        String(deptNameRaw).toLowerCase().includes(d.name.toLowerCase().trim())
-      ) || departments[0];
-
-      // Match responsible worker
-      const workerNameRaw = row["Ижро учун масъул"] || row["Primary Responsible (full name)"] || row["Xodim"] || "";
-      const worker = users.find(u => 
-        u.fullName.toLowerCase().includes(String(workerNameRaw).toLowerCase().trim()) ||
-        String(workerNameRaw).toLowerCase().includes(u.fullName.toLowerCase().trim())
-      ) || users.find(u => u.role === 'WORKER') || users[0];
-
-      // Match priority
-      const priorityRaw = String(row["Муҳимлик даражаси"] || row["Priority"] || "HIGH").toUpperCase().trim();
-      let priority: Task['priority'] = 'HIGH';
-      if (['CRITICAL', 'JUDAYUQORI'].includes(priorityRaw)) priority = 'CRITICAL';
-      else if (['MEDIUM', 'O\'RTACHA'].includes(priorityRaw)) priority = 'MEDIUM';
-      else if (['LOW', 'PAST'].includes(priorityRaw)) priority = 'LOW';
-
-      // Match deadline
-      let deadlineStr = '2027-06-30';
-      const deadlineRaw = row["Бажариш муддати"] || row["Deadline"] || row["Muddat"];
-      if (deadlineRaw) {
-        if (typeof deadlineRaw === 'number') {
-          const parsed = new Date((deadlineRaw - (25567 + 2)) * 86400 * 1000);
-          deadlineStr = parsed.toISOString().split('T')[0];
-        } else if (typeof deadlineRaw === 'string') {
-          deadlineStr = deadlineRaw.trim();
-        }
-      }
-
-      const parsedTask: Partial<Task> = {
-        id: `imported-${Date.now()}-${rowIndex}`,
-        itemNumber: itemNum,
-        planCode: publicCode,
-        title: String(title).trim(),
-        description: String(description).trim(),
-        expectedOutcome: "ToshTech 2026–2027 yillik ish rejasi talablariga to'liq erishish",
-        sourceReference: "ToshTech 2027-yil sentyabr oyiga qadar amalga oshiriladigan ishlar REJASI",
-        fundingSource: String(funding).trim(),
-        sectionTitle: String(sectionTitle).trim(),
-        status: 'ASSIGNED',
-        priority,
-        departmentId: dept.id,
-        departmentName: dept.name,
-        assignedToId: worker.id,
-        assignedToName: worker.fullName,
-        assignedToTelegramId: worker.telegramId,
-        assignedToTelegramUsername: worker.telegramUsername,
-        createdById: users[0]?.id || 'user-director',
-        createdByName: users[0]?.fullName || 'Prof. Rustam O. Xoliqov',
-        approverId: 'user-rustamov',
-        approverName: approver,
-        assignedDate: new Date().toISOString().split('T')[0],
-        deadline: deadlineStr,
-        progressPercent: Number(row["Ижро фоизи %"]) || 0,
-        proofs: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      report.tasksPreview.push(parsedTask);
-      report.created++;
-      rowIndex++;
-    }
-
-  } catch (err: any) {
-    report.errors.push(`Excel faylni tahlil qilishda xatolik: ${err.message || String(err)}`);
+    return parseExcelWorkbook(workbook, departments, users);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      warnings: [],
+      errors: [`Excel faylni tahlil qilishda xatolik: ${message}`],
+      tasksPreview: []
+    };
   }
-
-  return report;
 }

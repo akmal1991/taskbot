@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { exportTasksToExcel, parseExcelWorkPlan, ImportReport, OFFICIAL_WORK_PLAN_COLUMNS } from '../utils/excel';
+import { canApplyExcelImport, commitExcelImportIfValid, exportTasksToExcel, parseExcelWorkPlan, ImportReport, OFFICIAL_WORK_PLAN_COLUMNS } from '../utils/excel';
+import { ExcelImportErrors } from './ExcelImportErrors';
 import { 
   FileSpreadsheet, 
   Upload, 
@@ -31,6 +32,8 @@ export const ExcelManager: React.FC = () => {
     setFileName(file.name);
     setIsLoading(true);
     setIsSuccessImported(false);
+    setImportReport(null);
+    setPreviewTasks([]);
 
     try {
       const buffer = await file.arrayBuffer();
@@ -52,8 +55,7 @@ export const ExcelManager: React.FC = () => {
   };
 
   const handleApplyImport = () => {
-    if (previewTasks.length === 0) return;
-    importTasks(previewTasks);
+    if (!commitExcelImportIfValid(importReport, previewTasks, importTasks)) return;
     setIsSuccessImported(true);
     setPreviewTasks([]);
   };
@@ -234,13 +236,17 @@ export const ExcelManager: React.FC = () => {
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              {importReport.errors.length > 0
+                ? <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                : <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />}
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Excel Tahlil Xulosasi: {importReport.created} ta yangi topshiriq aniqlandi
+                {importReport.errors.length > 0
+                  ? `Excel tahlilida ${importReport.errors.length} ta xato aniqlandi`
+                  : `Excel Tahlil Xulosasi: ${importReport.created} ta yangi topshiriq aniqlandi`}
               </h3>
             </div>
 
-            {previewTasks.length > 0 && !isSuccessImported && (
+            {canApplyExcelImport(importReport, previewTasks) && !isSuccessImported && (
               <button
                 onClick={handleApplyImport}
                 className="px-4 py-2 bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center gap-2"
@@ -250,6 +256,8 @@ export const ExcelManager: React.FC = () => {
               </button>
             )}
           </div>
+
+          <ExcelImportErrors errors={importReport.errors} />
 
           {isSuccessImported && (
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-emerald-900 dark:text-emerald-200 font-semibold flex items-center gap-2">

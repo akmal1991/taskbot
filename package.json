@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "bun test",
-    "test:auth": "bun test server/telegramAuth.test.ts"
+    "test:auth": "bun test server/telegramAuth.test.ts",
+    "test:excel": "bun test src/utils/excel.test.ts"
   },
   "dependencies": {
     "@babel/parser": "^8.0.7",
