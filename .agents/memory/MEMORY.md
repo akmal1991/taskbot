@@ -1,1 +1,1 @@
-- [Bun lockfile compatibility](bun-lockfile-compatibility.md) — imported JSON-format Bun locks may need regeneration before post-merge installs work.
+- [Bun lockfile compatibility](bun-lockfile-compatibility.md) — Replit's configured Bun may reject imported lockfiles written by a newer release.
