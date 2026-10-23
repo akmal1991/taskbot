@@ -14,3 +14,17 @@ mtime_ms = 1792752676183
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:b85c4b44-f1ff-40fa-a850-071b99cb8dce/f02aff5a-e50c-4e91-bdbd-0b9f6b6a0632/5636fbfc-b662-42ff-85ff-bf5df0cbe5b5"
 storage_version_token = "1792752692195561"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "lRPEdNAOBX58a4qsdydZq"
+uri = "file://generated-artifacts/ToshTech_Work_Plan_Completed.xlsx"
+type = "table"
+title = "ToshTech Work Plan — Completed"
+description = "92 tasks with unique plan codes, priority recommendations, source-based categories, proposed responsibility fields, and a detailed confirmation sheet. Original populated source information and formatting preserved."
+logical_id = "d46fb127-1cb8-45e6-a1c2-e3c6eea93b26"
+content_hash = "sha256:711a99964e22346d17c86b20cb8a6325814a8271ce2da896f9cb740316ea7c61"
+size = 49363
+mtime_ms = 1792765949514
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:b85c4b44-f1ff-40fa-a850-071b99cb8dce/d46fb127-1cb8-45e6-a1c2-e3c6eea93b26/89c580b9-4c32-416c-8811-e95e3245c848"
+storage_version_token = "1792766055996189"
+content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
