@@ -5,6 +5,7 @@ import { Window } from 'happy-dom';
 import { AuthProvider } from './AuthContext';
 import { AppProvider, useApp } from './AppContext';
 import { LoginPage } from '../components/LoginPage';
+import { AdminPanel } from '../components/AdminPanel';
 import { localizeText } from '../utils/i18n';
 const window = new Window({ url:'https://unitask.example/' });
 const previous = new Map(), realFetch = globalThis.fetch;
@@ -24,6 +25,46 @@ beforeAll(async () => {
     return new Response(JSON.stringify(emptyState));
   };
   ({createRoot} = await import('react-dom/client')); ({act} = await import('react'));
+});
+
+it('submits the displayed Worker role without requiring a dropdown change', async () => {
+  const previousFetch = globalThis.fetch;
+  let submitted;
+  window.localStorage.setItem('unitask_language', 'en');
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/auth/me')) return Response.json({
+      user: { id: 'admin-test', fullName: 'Administrator', role: 'ADMIN' },
+      permissions: ['users.manage'], csrfToken: 'test-csrf',
+    });
+    if (String(url).endsWith('/admin/overview')) return Response.json({
+      ...emptyState, rolePermissions: { ADMIN: [], DIRECTOR: [], WORKER: [] },
+      permissionCeilings: { ADMIN: [], DIRECTOR: [], WORKER: [] },
+      imports: [], deliveries: [], settings: {}, stats: { tasks: 0, users: 0, departments: 0 },
+    });
+    if (String(url).endsWith('/admin/users') && options?.method === 'POST') {
+      submitted = JSON.parse(options.body);
+      return Response.json({ error: 'Test request captured' }, { status: 400 });
+    }
+    return Response.json(emptyState);
+  };
+  const { useAuth } = await import('./AuthContext');
+  const Gate = () => useAuth().user ? <AppProvider><AdminPanel /></AppProvider> : null;
+  let page;
+  try {
+    page = await mount(<AuthProvider><Gate /></AuthProvider>);
+    const clickButton = async text => act(async () => {
+      [...page.container.querySelectorAll('button')].find(button => button.textContent === text).click();
+    });
+    await clickButton('Users');
+    await clickButton('Add user');
+    const form = window.document.querySelector('form');
+    expect(form.querySelector('select').value).toBe('WORKER');
+    await act(async () => { form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); });
+    expect(submitted.role).toBe('WORKER');
+  } finally {
+    if (page) await page.unmount();
+    globalThis.fetch = previousFetch;
+  }
 });
 afterAll(() => {
   globalThis.fetch=realFetch; delete globalThis.IS_REACT_ACT_ENVIRONMENT;

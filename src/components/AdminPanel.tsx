@@ -76,7 +76,7 @@ export const AdminPanel: React.FC = () => {
     } catch (e) { setActionError((e as Error).message); return undefined; }
     finally { setBusy(false); }
   };
-  const openForm = (type: FormState['type'], value?: any) => setForm({ type, id: value?.id, values: value ? { ...value } : {} });
+  const openForm = (type: FormState['type'], value?: any) => setForm({ type, id: value?.id, values: value ? { ...value } : type === 'user' ? { role: 'WORKER' } : {} });
   const submitForm = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form) return;
