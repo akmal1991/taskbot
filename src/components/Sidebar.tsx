@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { canAccessView } from '../utils/permissions';
+import { TaskWorkspaceCard } from './TaskWorkspaceCard';
 import { 
   LayoutDashboard, 
   CheckSquare, 
@@ -136,28 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
           );
         })}
 
-        {/* Quick Launch Mobile TMA Banner */}
-        <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
-          <div className="p-3 bg-gradient-to-br from-slate-900 to-slate-800 dark:from-slate-800 dark:to-slate-900 rounded-xl text-white shadow-xs border border-transparent dark:border-slate-700/60">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[11px] font-semibold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Send className="w-3 h-3 text-sky-400" />
-                Telegram Mini App
-              </span>
-              <span className="text-[10px] font-mono text-slate-400">@UniTaskBot</span>
-            </div>
-            <p className="text-[11px] text-slate-300 leading-relaxed mb-3">
-              Xodimlar uchun mobil topshiriqlar, Clock-In va Proof-of-Work yuklash interfeysi.
-            </p>
-            <button
-              onClick={() => openTma()}
-              className="w-full flex items-center justify-center gap-2 py-1.5 px-3 bg-sky-500 hover:bg-sky-400 text-white font-semibold rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Mini Appni ochish</span>
-            </button>
-          </div>
-        </div>
+        <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800"><TaskWorkspaceCard /></div>
       </div>
 
       {/* User Status Card */}

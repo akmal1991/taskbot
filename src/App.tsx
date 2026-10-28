@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
+import { TaskWorkspaceCard } from './components/TaskWorkspaceCard';
 import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoaderCircle } from 'lucide-react';
@@ -47,6 +48,7 @@ const MainLayout: React.FC = () => {
         </div>
 
         <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 overflow-y-auto">
+          <div className="mb-4 md:hidden"><TaskWorkspaceCard /></div>
           {loading ? <div role="status" className="flex justify-center py-24"><LoaderCircle className="animate-spin" aria-label="Loading" /></div> : <Suspense fallback={<div role="status" className="flex justify-center py-24"><LoaderCircle className="animate-spin" aria-label="Loading" /></div>}>
           {visibleView === 'dashboard' && <Dashboard setActiveView={setActiveView} />}
           {visibleView === 'tasks' && <TaskRegister />}

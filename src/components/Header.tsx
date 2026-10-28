@@ -15,8 +15,6 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
     permissions,
     notifications, 
     pendingProofsCount, 
-    openTma,
-    isTmaOpen,
     language,
     setLanguage,
     theme,
@@ -121,20 +119,15 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
           <LogOut className="h-4 w-4" />
         </button>
 
-        {/* Telegram Mini App (TMA) Simulator Launch Button */}
-        <button
-          onClick={() => openTma()}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs ${
-            isTmaOpen 
-              ? 'bg-sky-600 text-white shadow-sky-600/20' 
-              : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white border border-transparent dark:border-slate-700'
-          }`}
-          title="Telegram Mini App (TMA) mobil interfeysini ochish"
+        <a
+          href="https://t.me/UniTaskTashTech_bot"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white border border-transparent dark:border-slate-700"
+          title="Open in Telegram"
         >
           <Smartphone className="w-3.5 h-3.5 text-sky-400" />
           <span className="hidden lg:inline">Telegram Mini App</span>
-          <span className="lg:hidden">TMA</span>
-        </button>
+          <span className="lg:hidden">Telegram</span>
+        </a>
 
         {/* Notification bell */}
         {canAccessView('scheduler', currentUser.role, permissions) && (

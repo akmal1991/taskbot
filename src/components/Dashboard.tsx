@@ -170,13 +170,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveView }) => {
             <span>Excel (.xlsx) Экспорт</span>
           </button>
 
-          <button
-            onClick={() => openTma()}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
-          >
-            <Smartphone className="w-4 h-4 text-sky-400 dark:text-sky-200" />
-            <span>Ходим TMA Мобили</span>
-          </button>
         </div>
       </div>
 
@@ -215,9 +208,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveView }) => {
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
               {workPlanProgressPercent}%
-            </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              ({completedTasks}/{totalTasks} топшириқ)
             </span>
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 mt-3 overflow-hidden">
