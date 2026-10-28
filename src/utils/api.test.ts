@@ -24,3 +24,8 @@ test('normalizes invalid error bodies without passing render-unsafe objects into
   globalThis.fetch=(async()=>new Response('{"error":{"private":"details"}}',{status:500})) as unknown as typeof fetch;
   await expect(api('/state')).rejects.toMatchObject({message:'Request failed.',status:500});
 });
+
+test('preserves invalid field names so the form can identify a rejected username',async()=>{
+  globalThis.fetch=(async()=>Response.json({error:'Invalid form values. Check required fields and formats.',fields:[{field:'username',code:'invalid_format'},null,{field:{private:'data'}}]},{status:400})) as unknown as typeof fetch;
+  await expect(api('/admin/users',{method:'POST',body:'{}'})).rejects.toMatchObject({status:400,fields:[{field:'username',code:'invalid_format'}]});
+});

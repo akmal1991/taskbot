@@ -1,6 +1,7 @@
 // Interface translations. Uzbek Cyrillic is derived from the reviewed Uzbek Latin strings.
 import { securityCopy } from './securityTranslations.ts';
 export const interfaceTranslations: Record<string, { en: string; ru: string; 'uz-Latn'?: string }> = {
+  "Username must contain 3–64 English letters, numbers, dots, underscores or hyphens, without spaces.": { en: "Username must contain 3–64 English letters, numbers, dots, underscores or hyphens, without spaces.", ru: "Имя пользователя должно содержать 3–64 латинские буквы, цифры, точки, подчёркивания или дефисы, без пробелов.", 'uz-Latn': "Foydalanuvchi nomi 3–64 ta lotin harfi, raqam, nuqta, pastki chiziq yoki defisdan iborat bo‘lishi kerak. Bo‘sh joy ishlatmang." },
   "Telegram": { en: "Telegram", ru: "Telegram", 'uz-Latn': "Telegram" },
   "Open in Telegram": { en: "Open in Telegram", ru: "Открыть в Telegram", 'uz-Latn': "Telegramda ochish" },
   "Topshiriq ish maydoni": { en: "Task workspace", ru: "Рабочая область заданий", 'uz-Latn': "Topshiriq ish maydoni" },

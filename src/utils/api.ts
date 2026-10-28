@@ -1,7 +1,7 @@
 let csrfToken = '';
 export const setCsrfToken = (token: string) => { csrfToken = token; };
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  constructor(message: string, public status: number, public fields: { field: string; code: string }[] = []) { super(message); }
 }
 export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
@@ -16,7 +16,8 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
   catch { throw new ApiError('Invalid server response.', response.status); }
   if (!data || typeof data !== 'object') throw new ApiError('Invalid server response.', response.status);
   if (!response.ok) {
-    throw new ApiError(typeof data.error === 'string' ? data.error : 'Request failed.', response.status);
+    const fields = Array.isArray(data.fields) ? data.fields.filter((item: any) => item && typeof item.field === 'string' && typeof item.code === 'string') : [];
+    throw new ApiError(typeof data.error === 'string' ? data.error : 'Request failed.', response.status, fields);
   }
   return data as T;
 }

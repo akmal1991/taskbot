@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Archive, Building2, Check, ChevronLeft, ChevronRight, CircleAlert, ClipboardList, Cog, Download, KeyRound, Layers3, LoaderCircle, Play, Plus, RefreshCw, RotateCcw, Search, Shield, Trash2, Upload, UsersRound } from 'lucide-react';
-import { api } from '../utils/api';
+import { api, ApiError } from '../utils/api';
 import { useApp } from '../context/AppContext';
 import { DraftPlanImportPanel } from './DraftPlanImportPanel';
 import { PERMISSIONS, ROLES, type Role } from '../../shared/policy';
@@ -73,10 +73,15 @@ export const AdminPanel: React.FC = () => {
       const result = await api<T>(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       await refreshAll();
       return result;
-    } catch (e) { setActionError((e as Error).message); return undefined; }
+    } catch (e) {
+      const labels: Record<string, string> = { username: 'Username', email: 'Email', fullName: 'Full name', role: 'Role', departmentId: 'Department', phone: 'Phone' };
+      const fields = e instanceof ApiError ? e.fields.map(issue => t(labels[issue.field] || issue.field)).join(', ') : '';
+      setActionError(`${t((e as Error).message)}${fields ? ` (${fields})` : ''}`);
+      return undefined;
+    }
     finally { setBusy(false); }
   };
-  const openForm = (type: FormState['type'], value?: any) => setForm({ type, id: value?.id, values: value ? { ...value } : type === 'user' ? { role: 'WORKER' } : {} });
+  const openForm = (type: FormState['type'], value?: any) => { setActionError(''); setForm({ type, id: value?.id, values: value ? { ...value } : type === 'user' ? { role: 'WORKER' } : {} }); };
   const submitForm = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!form) return;
@@ -86,7 +91,7 @@ export const AdminPanel: React.FC = () => {
     let method = form.id ? 'PATCH' : 'POST';
     if (form.type === 'user') {
       path = form.id ? `/admin/users/${encodeURIComponent(form.id)}` : '/admin/users';
-      body = { username: v.username, email: v.email, fullName: v.fullName, role: v.role, departmentId: v.departmentId || null, phone: v.phone, ...(form.id ? { active: Boolean(v.active) } : {}) };
+      body = { username: v.username?.trim(), email: v.email?.trim(), fullName: v.fullName, role: v.role || 'WORKER', departmentId: v.departmentId || null, phone: v.phone, ...(form.id ? { active: Boolean(v.active) } : {}) };
     } else if (form.type === 'department') {
       path = form.id ? `/admin/departments/${encodeURIComponent(form.id)}` : '/admin/departments';
       body = { code: v.code, name: v.name, coordinatorId: v.coordinatorId || null, ...(form.id ? { active: Boolean(v.active) } : {}) };
@@ -222,6 +227,8 @@ export const AdminPanel: React.FC = () => {
     </div>
 
     {form && <AdminModal title={t(`${form.id ? 'Edit' : 'Add'} ${form.type}`)} onClose={() => setForm(null)}><form onSubmit={submitForm} className="space-y-4">
+      {actionError && <AdminAlert tone="error">{actionError}</AdminAlert>}
+      {form.type === 'user' && <p className="text-xs text-slate-500">{t('Username must contain 3–64 English letters, numbers, dots, underscores or hyphens, without spaces.')}</p>}
       {form.type === 'user' && <><FormText label={t('Username')} name="username" required value={form.values.username || ''} set={updateForm} /><FormText label={t('Email')} name="email" type="email" required value={form.values.email || ''} set={updateForm} /><FormText label={t('Full name')} name="fullName" required value={form.values.fullName || ''} set={updateForm} /><FormText label={t('Phone')} name="phone" value={form.values.phone || ''} set={updateForm} /><AdminField label={t('Role')}><AdminSelect required value={form.values.role || 'WORKER'} onChange={e => updateForm('role', e.target.value)}>{ROLES.map(role => <option key={role} value={role}>{t(role)}</option>)}</AdminSelect></AdminField><AdminField label={t('Department')}><AdminSelect value={form.values.departmentId || ''} onChange={e => updateForm('departmentId', e.target.value)}><option value="">{t('No department')}</option>{overview.departments.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</AdminSelect></AdminField>{form.id && <CheckField label={t('Active account')} checked={Boolean(form.values.active)} onChange={v => updateForm('active', v)} />}</>}
       {form.type === 'department' && <><FormText label={t('Code')} name="code" required value={form.values.code || ''} set={updateForm} /><FormText label={t('Name')} name="name" required value={form.values.name || ''} set={updateForm} /><AdminField label={t('Coordinator')}><AdminSelect value={form.values.coordinatorId || ''} onChange={e => updateForm('coordinatorId', e.target.value)}><option value="">{t('Unassigned')}</option>{overview.users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</AdminSelect></AdminField>{form.id && <CheckField label={t('Active')} checked={Boolean(form.values.active)} onChange={v => updateForm('active', v)} />}</>}
       {form.type === 'plan' && <><FormText label={t('Title')} name="title" required value={form.values.title || ''} set={updateForm} /><FormText label={t('Year')} name="year" type="number" required value={form.values.year || new Date().getFullYear()} set={updateForm} />{form.id && <CheckField label={t('Active')} checked={Boolean(form.values.active)} onChange={v => updateForm('active', v)} />}</>}
@@ -251,7 +258,7 @@ function Pagination({ page, pages, onPage, label }: { page: number; pages: numbe
 function RoleChip({ role }: { role: string }) { return <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800 dark:bg-sky-950/50 dark:text-sky-200">{role}</span>; }
 function SectionHeader({ title, actionLabel, onAdd }: { title: string; actionLabel: string; onAdd: () => void }) { return <div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-800"><h2 className="font-bold">{title}</h2><AdminButton tone="primary" onClick={onAdd}><Plus size={15} />{actionLabel}</AdminButton></div>; }
 function DataTable({ columns, rows, empty }: { columns: string[]; rows: React.ReactNode[][]; empty: string }) { return <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 dark:bg-slate-800"><tr>{columns.map(c => <th key={c} className="px-4 py-3">{c}</th>)}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j} className="px-4 py-3">{cell}</td>)}</tr>)}</tbody></table>{!rows.length && <EmptyState title={empty} detail="" />}</div>; }
-function FormText({ label, name, value, set, required, type = 'text' }: { label: string; name: string; value: any; set: (key: string, value: any) => void; required?: boolean; type?: string }) { return <AdminField label={label}><AdminInput name={name} type={type} required={required} value={value} onChange={e => set(name, e.target.value)} /></AdminField>; }
+function FormText({ label, name, value, set, required, type = 'text' }: { label: string; name: string; value: any; set: (key: string, value: any) => void; required?: boolean; type?: string }) { return <AdminField label={label}><AdminInput name={name} type={type} required={required} pattern={name === 'username' ? '[A-Za-z0-9_.\\-]{3,64}' : undefined} minLength={name === 'username' ? 3 : undefined} maxLength={name === 'username' ? 64 : undefined} value={value} onChange={e => set(name, e.target.value)} /></AdminField>; }
 function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) { return <label className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-3 text-sm font-medium dark:bg-slate-800"><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-4 w-4 accent-sky-700" />{label}</label>; }
 function RolePermissions({ role, enabled, ceiling, onSave, busy, t }: { role: Role; enabled: string[]; ceiling: string[]; onSave: (permissions: string[]) => void; busy: boolean; t: (value: string) => string }) {
   const [selected, setSelected] = useState(enabled);
