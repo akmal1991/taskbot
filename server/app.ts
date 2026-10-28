@@ -164,6 +164,12 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
   api.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof ZodError) { res.status(400).json({ error: 'Invalid form values. Check required fields and formats.',
       fields: error.issues.map(i => ({ field: i.path.join('.'), code: i.code })) }); return; }
+    if (error.code === '23505' && error.constraint === 'ut_users_username_unique') {
+      res.status(409).json({ error: 'This username is already used by another account. Choose a different username or edit the existing account.', fields: [{ field: 'username', code: 'duplicate' }] }); return;
+    }
+    if (error.code === '23505' && error.constraint === 'ut_users_email_unique') {
+      res.status(409).json({ error: 'This email is already used by another account. Use a different email or edit the existing account.', fields: [{ field: 'email', code: 'duplicate' }] }); return;
+    }
     const status = error.status || (error.code === '23505' ? 409 : ['23503','23514','22P02'].includes(error.code) ? 400 : error.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
     if (status >= 500) console.error('API request failed', { code: error.code || 'INTERNAL_ERROR' });
     res.status(status).json({ error: error instanceof HttpError ? error.message : status === 409 ? 'A conflicting record already exists. Nothing was overwritten.' :

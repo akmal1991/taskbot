@@ -67,6 +67,17 @@ afterAll(async () => {
   }
 });
 describe('server authentication and fixed-role isolation', () => {
+  it('identifies duplicate usernames and emails without changing the existing account', async () => {
+    const input = { username: 'WORKER', email: 'unique-account@example.test', fullName: 'Duplicate test', role: 'WORKER' };
+    const usernameConflict = await request(admin, '/admin/users', 'POST', input);
+    expect(usernameConflict.status).toBe(409);
+    expect(usernameConflict.body.fields).toEqual([{ field: 'username', code: 'duplicate' }]);
+    const emailConflict = await request(admin, '/admin/users', 'POST', { ...input, username: 'unique-account', email: 'WORKER@example.test' });
+    expect(emailConflict.status).toBe(409);
+    expect(emailConflict.body.fields).toEqual([{ field: 'email', code: 'duplicate' }]);
+    const original = await database.query("SELECT full_name,role FROM ut_users WHERE id='worker'");
+    expect(original.rows[0]).toEqual({ full_name: 'worker', role: 'WORKER' });
+  });
   it('uses a verified memory-hard password hash rather than plaintext', async () => {
     const stored = (await database.query("SELECT password_hash FROM ut_users WHERE id='admin'")).rows[0].password_hash;
     expect(stored).toStartWith('scrypt$131072$8$1$'); expect(stored).not.toContain(password);
