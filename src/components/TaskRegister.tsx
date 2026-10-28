@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { localizeText } from '../utils/i18n';
 import { useApp } from '../context/AppContext';
 import { Task, Priority, TaskStatus, TaskComment } from '../types';
 import { exportTasksToExcel, exportTasksToCsv } from '../utils/excel';
@@ -290,12 +291,22 @@ export const TaskRegister: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newExpectedOutcome, setNewExpectedOutcome] = useState('');
   const [newFundingSource, setNewFundingSource] = useState('Университет маблағлари');
-  const [newDeptId, setNewDeptId] = useState(departments[0]?.id || '');
+  const [newDeptId, setNewDeptId] = useState(departments.find(d => d.active !== false)?.id || '');
   const [newSectionId, setNewSectionId] = useState(OFFICIAL_SECTIONS[0]?.id || '');
   const [newApproverId, setNewApproverId] = useState('');
-  const [newAssigneeId, setNewAssigneeId] = useState(users.find(u => u.role === 'WORKER')?.id || users[0]?.id || '');
+  const [newAssigneeId, setNewAssigneeId] = useState(users.find(u => u.active && u.role === 'WORKER')?.id || users.find(u => u.active)?.id || '');
   const [newPriority, setNewPriority] = useState<Priority>('HIGH');
   const [newDeadline, setNewDeadline] = useState('2027-06-30');
+
+  useEffect(() => {
+    if (!users.some(u => u.id === newAssigneeId && u.active)) {
+      setNewAssigneeId(users.find(u => u.active && u.role === 'WORKER')?.id || users.find(u => u.active)?.id || '');
+    }
+    if (!departments.some(d => d.id === newDeptId && d.active !== false)) {
+      setNewDeptId(departments.find(d => d.active !== false)?.id || '');
+    }
+    if (newApproverId && (newApproverId === newAssigneeId || !users.some(u => u.id === newApproverId && u.active && ['ADMIN', 'DIRECTOR'].includes(u.role)))) setNewApproverId('');
+  }, [users, departments, newAssigneeId, newDeptId, newApproverId]);
 
   // Always get fresh task state from tasks
   const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) || null : null;
@@ -443,7 +454,7 @@ export const TaskRegister: React.FC = () => {
     const dept = departments.find(d => d.id === newDeptId);
     const assignee = users.find(u => u.id === newAssigneeId);
     const sec = OFFICIAL_SECTIONS.find(s => s.id === newSectionId);
-    if (!dept || !assignee) return;
+    if (!dept || !assignee?.active) { showNotification(localizeText('Choose an active assignee.')); return; }
 
     try { await createTask({
       itemNumber: tasks.length + 1,
@@ -2136,13 +2147,15 @@ export const TaskRegister: React.FC = () => {
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Ижро учун Масъул *</label>
                   <select
+                    required
                     value={newAssigneeId}
                     onChange={(e) => setNewAssigneeId(e.target.value)}
                     className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg font-medium"
                   >
+                    <option value="">Choose an active assignee.</option>
                     {users.filter(u => u.active).map(u => (
                       <option key={u.id} value={u.id} className="dark:bg-slate-900">
-                        {u.fullName} ({u.roleLabel.split(' ')[0]})
+                        {`${u.fullName} — ${localizeText(u.role)}`}
                       </option>
                     ))}
                   </select>

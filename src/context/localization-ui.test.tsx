@@ -6,11 +6,34 @@ import { AuthProvider } from './AuthContext';
 import { AppProvider, useApp } from './AppContext';
 import { LoginPage } from '../components/LoginPage';
 import { AdminPanel } from '../components/AdminPanel';
+import { TaskRegister } from '../components/TaskRegister';
 import { localizeText } from '../utils/i18n';
 const window = new Window({ url:'https://unitask.example/' });
 const previous = new Map(), realFetch = globalThis.fetch;
 let createRoot, act, authenticated = false;
 const emptyState = {users:[],departments:[],tasks:[],auditLogs:[],queueJobs:[],notifications:[],tickets:[],sections:[],workPlans:[],categories:[]};
+
+it('selects an active assignee when inactive accounts appear first or data arrives after mount', async () => {
+  const previousFetch = globalThis.fetch;
+  const staff = [
+    { id: 'inactive', fullName: 'Inactive worker', role: 'WORKER', roleLabel: 'WORKER', active: false },
+    { id: 'active', fullName: 'Active worker', role: 'WORKER', roleLabel: 'WORKER', active: true },
+  ];
+  globalThis.fetch = async url => Response.json(String(url).endsWith('/auth/me') ? {
+    user: { id: 'admin', role: 'ADMIN', fullName: 'Admin' }, permissions: ['tasks.create'], csrfToken: 'test',
+  } : { ...emptyState, users: staff, departments: [{ id: 'dept', name: 'IT', active: true }] });
+  const { useAuth } = await import('./AuthContext');
+  const Gate = () => useAuth().user ? <AppProvider><TaskRegister /></AppProvider> : null;
+  let page;
+  try {
+    page = await mount(<AuthProvider><Gate /></AuthProvider>);
+    await act(async () => { [...page.container.querySelectorAll('button')].find(b => b.textContent.includes('Янги Топшириқ')).click(); });
+    const assignee = [...page.container.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'active'));
+    expect(assignee.value).toBe('active');
+    expect([...assignee.options].some(option => option.value === 'inactive')).toBe(false);
+    expect(assignee.textContent).not.toContain('"},');
+  } finally { if (page) await page.unmount(); globalThis.fetch = previousFetch; }
+});
 beforeAll(async () => {
   for (const name of ['window','document','navigator','localStorage','HTMLElement','Event','MouseEvent']) {
     previous.set(name,Object.getOwnPropertyDescriptor(globalThis,name));
