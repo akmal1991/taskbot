@@ -19,6 +19,12 @@ export const ServiceDeskView: React.FC = () => {
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [loadingDepartments, setLoadingDepartments] = useState(true);
   const [sending, setSending] = useState(false);
+  const [recipients, setRecipients] = useState<{ id: string; fullName: string }[]>([]);
+  const [recipientUserId, setRecipientUserId] = useState('');
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const [direction, setDirection] = useState<'ALL' | 'INCOMING' | 'SENT'>('ALL');
+  const [resolveError, setResolveError] = useState('');
+  const [resolving, setResolving] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<ServiceDeskTicket | null>(null);
@@ -44,6 +50,16 @@ export const ServiceDeskView: React.FC = () => {
       .finally(() => { if (!cancelled) setLoadingDepartments(false); });
     return () => { cancelled = true; };
   }, [isModalOpen]);
+  useEffect(() => {
+    if (!isModalOpen || !departmentId) return;
+    let cancelled = false;
+    setRecipients([]); setRecipientUserId(''); setLoadingRecipients(true);
+    api<{ id: string; fullName: string }[]>(`/ticket-recipients?departmentId=${encodeURIComponent(departmentId)}`).then(data => {
+      if (!cancelled) setRecipients(data);
+    }).catch(error => { if (!cancelled) setFormError((error as Error).message); })
+      .finally(() => { if (!cancelled) setLoadingRecipients(false); });
+    return () => { cancelled = true; };
+  }, [isModalOpen, departmentId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +77,7 @@ export const ServiceDeskView: React.FC = () => {
       description: description.trim(),
       departmentId: dept.id,
       departmentName: dept.name,
+      recipientUserId: recipientUserId || undefined,
       applicantName,
       applicantEmail,
       applicantPhone,
@@ -76,7 +93,9 @@ export const ServiceDeskView: React.FC = () => {
   const handleResolve = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTicket || !responseNote.trim()) return;
-    try { await resolveTicket(selectedTicket.id, responseNote.trim()); } catch { return; }
+    setResolveError(''); setResolving(true);
+    try { await resolveTicket(selectedTicket.id, responseNote.trim()); } catch (error) { setResolveError((error as Error).message); return; }
+    finally { setResolving(false); }
     setSelectedTicket(null);
     setResponseNote('');
   };
@@ -107,9 +126,14 @@ export const ServiceDeskView: React.FC = () => {
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {(['ALL', 'INCOMING', 'SENT'] as const).map(value => <button key={value} type="button" aria-pressed={direction === value} onClick={() => setDirection(value)} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${direction === value ? 'bg-slate-900 text-white dark:bg-indigo-600' : 'bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
+          {value === 'ALL' ? 'All requests' : value === 'INCOMING' ? 'Incoming requests' : 'Sent requests'}
+        </button>)}
+      </div>
       {/* Tickets List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {tickets.map((ticket) => (
+        {tickets.filter(ticket => direction === 'ALL' || (direction === 'SENT' ? ticket.senderId === currentUser.id : ticket.senderId !== currentUser.id)).map((ticket) => (
           <div 
             key={ticket.id} 
             className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs space-y-3 flex flex-col justify-between"
@@ -139,6 +163,8 @@ export const ServiceDeskView: React.FC = () => {
             </div>
 
             <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <p><span className="font-semibold">Sender</span>: {`${ticket.applicantName} — ${ticket.senderDepartmentName || ''}`}</p>
+              <p><span className="font-semibold">Recipient</span>: {ticket.recipientName || ticket.departmentName}</p>
               <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
                 <span className="flex items-center gap-1">
                   <Building2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
@@ -153,12 +179,13 @@ export const ServiceDeskView: React.FC = () => {
                     Bo'lim Javobi:
                   </span>
                   {ticket.responseNote}
+                  {ticket.resolvedByName && <p className="mt-2 text-xs">{ticket.resolvedByName}</p>}
                 </div>
               )}
 
-              {ticket.status !== 'RESOLVED' && ['DIRECTOR', 'ADMIN'].includes(currentUser.role) && (
+              {ticket.status !== 'RESOLVED' && ticket.canRespond && (
                 <button
-                  onClick={() => setSelectedTicket(ticket)}
+                  onClick={() => { setSelectedTicket(ticket); setResolveError(''); setResponseNote(''); }}
                   className="w-full mt-2 py-1.5 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold rounded-lg transition-colors text-center"
                 >
                   Javob Qaytarish / Hal Qilish
@@ -206,6 +233,14 @@ export const ServiceDeskView: React.FC = () => {
                 </select>
               </div>
 
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1" htmlFor="ticket-recipient">Recipient employee (optional)</label>
+                <select id="ticket-recipient" value={recipientUserId} onChange={e => setRecipientUserId(e.target.value)} disabled={loadingDepartments || loadingRecipients || sending} className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs dark:border-slate-700 dark:bg-slate-800">
+                  <option value="">Entire department</option>
+                  {recipients.map(employee => <option key={employee.id} value={employee.id}>{employee.fullName}</option>)}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">Choose an employee for a private request, or send to the whole department.</p>
+              </div>
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Murojaat Mavzusi *</label>
                 <input
@@ -262,7 +297,7 @@ export const ServiceDeskView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loadingDepartments || departments.length === 0 || sending}
+                  disabled={loadingDepartments || loadingRecipients || departments.length === 0 || sending}
                   className="px-4 py-2 bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs"
                 >
                   Yuborish
@@ -295,6 +330,7 @@ export const ServiceDeskView: React.FC = () => {
             </div>
 
             <form onSubmit={handleResolve} className="space-y-3 text-xs">
+              {resolveError && <p role="alert" className="text-sm text-rose-600">{resolveError}</p>}
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Ijro Xulosasi / Javob Matni *
@@ -319,6 +355,7 @@ export const ServiceDeskView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={resolving}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-xs"
                 >
                   Hal Qilindi Deb Belgilash

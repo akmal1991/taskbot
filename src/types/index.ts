@@ -177,6 +177,12 @@ export interface TelegramNotification {
 }
 
 export interface ServiceDeskTicket {
+  senderId?: string;
+  senderDepartmentName?: string;
+  recipientUserId?: string;
+  recipientName?: string;
+  canRespond?: boolean;
+  resolvedByName?: string;
   id: string;
   ticketNumber: string;
   title: string;

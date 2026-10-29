@@ -12,6 +12,7 @@ import { getTasks, lockedTask } from './records';
 import { readSettings } from './notifications';
 import { verifyTelegramInitData } from './telegramAuth';
 import { isAssignee } from './taskAssignments';
+import { ticketVisibleSQL, ticketRespondSQL } from './ticketAccess';
 
 export function createApplication(database: pg.Pool, options: { telegramBotToken?: string } = {}) {
   const app = express();
@@ -47,8 +48,11 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
         WHERE ($1::boolean OR action LIKE 'TASK%' OR action LIKE 'EVIDENCE%' OR action IN ('COMMENT_ADDED','PROGRESS_UPDATED','ATTACHMENT_UPLOADED','REPORT_EXPORTED'))
         ORDER BY created_at DESC LIMIT 500`, [actor.role === 'ADMIN']) : Promise.resolve({ rows: [] }),
       database.query('SELECT * FROM ut_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200', [actor.id]),
-      database.query(`SELECT t.*,u.full_name,u.email,u.data,d.name AS department_name FROM ut_tickets t JOIN ut_users u ON u.id=t.user_id
-        JOIN ut_departments d ON d.id=t.department_id WHERE ($1::boolean OR t.user_id=$2) ORDER BY t.created_at DESC`, [actor.permissions.includes('tickets.resolve'), actor.id]),
+      database.query(`SELECT t.*,u.full_name,u.email,u.data,d.name AS department_name,source.name AS sender_department_name,
+        recipient.full_name AS recipient_name,resolver.full_name AS resolved_by_name,${ticketRespondSQL} AS can_respond
+        FROM ut_tickets t JOIN ut_users u ON u.id=t.user_id JOIN ut_departments d ON d.id=t.department_id
+        LEFT JOIN ut_departments source ON source.id=u.department_id LEFT JOIN ut_users recipient ON recipient.id=t.recipient_user_id
+        LEFT JOIN ut_users resolver ON resolver.id=t.resolved_by_id WHERE ${ticketVisibleSQL} ORDER BY t.created_at DESC`, [actor.permissions.includes('tickets.resolve'), actor.id]),
       database.query(`SELECT DISTINCT p.id,p.title,p.year,p.active FROM ut_work_plans p LEFT JOIN ut_tasks t ON t.work_plan_id=p.id
         WHERE ($1::boolean OR t.assignee_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2)) AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
         ORDER BY p.year DESC`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
@@ -67,6 +71,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
         type: n.type, title: n.title, messageText: n.body, taskId: n.task_id, sentAt: n.created_at,
         isRead: Boolean(n.read_at), deliveryStatus: n.status })),
       tickets: tickets.rows.map(t => ({ id: t.id, ticketNumber: t.number, title: t.title, description: t.description,
+        senderId: t.user_id, senderDepartmentName: t.sender_department_name || '', recipientUserId: t.recipient_user_id || '', recipientName: t.recipient_name || '', canRespond: t.can_respond, resolvedByName: t.resolved_by_name || '',
         departmentId: t.department_id, departmentName: t.department_name, applicantName: t.full_name, applicantEmail: t.email,
         applicantPhone: t.data?.phone || '', status: t.status, priority: t.priority, createdAt: t.created_at, responseNote: t.response_note, resolvedAt: t.resolved_at })),
       queueJobs: actor.role === 'ADMIN' ? ['reminders','delivery'].map(name => {
@@ -96,22 +101,32 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
   api.get('/ticket-departments', wrap(async (_req, res) => {
     res.json((await database.query('SELECT id,name FROM ut_departments WHERE active=true ORDER BY name')).rows);
   }));
+  api.get('/ticket-recipients', wrap(async (req, res) => {
+    const departmentId = z.string().min(1).max(128).parse(req.query.departmentId);
+    res.json((await database.query(`SELECT u.id,u.full_name AS "fullName" FROM ut_users u
+      JOIN ut_departments d ON d.id=$1 AND d.active=true WHERE u.active=true AND
+      (u.department_id=$1 OR EXISTS(SELECT 1 FROM ut_memberships m WHERE m.user_id=u.id AND m.department_id=$1)) ORDER BY u.full_name`, [departmentId])).rows);
+  }));
   api.post('/tickets', wrap(async (req, res) => {
     const input = z.object({ title: z.string().trim().min(1).max(200), description: z.string().trim().min(1).max(20000),
-      departmentId: z.string().max(128), priority: z.enum(['HIGH','MEDIUM','LOW']) }).strict().parse(req.body);
+      departmentId: z.string().max(128), recipientUserId: z.string().min(1).max(128).optional(), priority: z.enum(['HIGH','MEDIUM','LOW']) }).strict().parse(req.body);
     const ticketId = id('ticket');
     await transaction(database, async db => {
       if (!(await db.query('SELECT id FROM ut_departments WHERE id=$1 AND active=true', [input.departmentId])).rowCount) throw new HttpError(400, 'Department unavailable.');
+      if (input.recipientUserId && !(await db.query(`SELECT id FROM ut_users u WHERE id=$1 AND active=true AND
+        (department_id=$2 OR EXISTS(SELECT 1 FROM ut_memberships m WHERE m.user_id=u.id AND m.department_id=$2))`, [input.recipientUserId, input.departmentId])).rowCount) throw new HttpError(400, 'Choose an active employee in the selected department.');
       const number = `SD-${new Date().getUTCFullYear()}-${ticketId.slice(-12).toUpperCase()}`;
-      await db.query('INSERT INTO ut_tickets(id,number,user_id,department_id,title,description,priority) VALUES($1,$2,$3,$4,$5,$6,$7)',
-        [ticketId, number, req.actor!.id, input.departmentId, input.title, input.description, input.priority]);
+      await db.query('INSERT INTO ut_tickets(id,number,user_id,department_id,title,description,priority,recipient_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+        [ticketId, number, req.actor!.id, input.departmentId, input.title, input.description, input.priority, input.recipientUserId || null]);
       await audit(db, req, 'TICKET_CREATED', ticketId);
     }); res.status(201).json({ id: ticketId });
   }));
-  api.post('/tickets/:id/resolve', permit('tickets.resolve'), wrap(async (req, res) => {
+  api.post('/tickets/:id/resolve', wrap(async (req, res) => {
     const { responseNote } = z.object({ responseNote: z.string().trim().min(1).max(20000) }).strict().parse(req.body);
     await transaction(database, async db => {
-      if (!(await db.query("UPDATE ut_tickets SET status='RESOLVED',response_note=$2,resolved_at=now() WHERE id=$1 AND status IN ('NEW','PROCESSING') RETURNING id", [req.params.id, responseNote])).rowCount) throw new HttpError(409, 'Ticket not found or already resolved.');
+      const access = await db.query(`SELECT t.id FROM ut_tickets t WHERE ${ticketRespondSQL} AND t.id=$3 FOR UPDATE`, [req.actor!.permissions.includes('tickets.resolve'), req.actor!.id, req.params.id]);
+      if (!access.rowCount) throw new HttpError(403, 'Only the recipient or an authorized manager may respond to this request.');
+      if (!(await db.query("UPDATE ut_tickets SET status='RESOLVED',response_note=$2,resolved_at=now(),resolved_by_id=$3 WHERE id=$1 AND status IN ('NEW','PROCESSING') RETURNING id", [req.params.id, responseNote, req.actor!.id])).rowCount) throw new HttpError(409, 'Ticket not found or already resolved.');
       await audit(db, req, 'TICKET_RESOLVED', String(req.params.id), null, null, responseNote);
     }); res.json({ ok: true });
   }));

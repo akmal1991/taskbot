@@ -115,7 +115,7 @@ export const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => 
     },
     triggerJobRun: async job => { await mutate('/admin/jobs/run', { job }); },
     markNotificationAsRead: async notice => { await mutate(`/notifications/${encodeURIComponent(notice)}/read`); },
-    createTicket: async ticket => { await mutate('/tickets', { title: ticket.title, description: ticket.description, departmentId: ticket.departmentId, priority: ticket.priority }); },
+    createTicket: async ticket => { await mutate('/tickets', { title: ticket.title, description: ticket.description, departmentId: ticket.departmentId, priority: ticket.priority, ...(ticket.recipientUserId ? { recipientUserId: ticket.recipientUserId } : {}) }); },
     resolveTicket: async (ticketId, responseNote) => { await mutate(`/tickets/${encodeURIComponent(ticketId)}/resolve`, { responseNote }); },
     workPlanProgressPercent: activeTasks.length ? Math.round(activeTasks.reduce((n, t) => n + t.progressPercent, 0) / activeTasks.length) : 0,
     overdueTasksCount: activeTasks.filter(t => t.isOverdue).length,

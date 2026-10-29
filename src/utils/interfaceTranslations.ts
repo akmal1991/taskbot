@@ -1,6 +1,16 @@
 // Interface translations. Uzbek Cyrillic is derived from the reviewed Uzbek Latin strings.
 import { securityCopy } from './securityTranslations.ts';
 export const interfaceTranslations: Record<string, { en: string; ru: string; 'uz-Latn'?: string }> = {
+  "Choose an active employee in the selected department.": { en: "Choose an active employee in the selected department.", ru: "Выберите активного сотрудника выбранного подразделения.", 'uz-Latn': "Tanlangan bo‘limdagi faol xodimni tanlang." },
+  "Only the recipient or an authorized manager may respond to this request.": { en: "Only the recipient or an authorized manager may respond to this request.", ru: "На это обращение может ответить только получатель или уполномоченный руководитель.", 'uz-Latn': "Bu murojaatga faqat qabul qiluvchi yoki vakolatli rahbar javob bera oladi." },
+  "All requests": { en: "All requests", ru: "Все обращения", 'uz-Latn': "Barcha murojaatlar" },
+  "Incoming requests": { en: "Incoming requests", ru: "Входящие обращения", 'uz-Latn': "Kelgan murojaatlar" },
+  "Sent requests": { en: "Sent requests", ru: "Отправленные обращения", 'uz-Latn': "Yuborilgan murojaatlar" },
+  "Sender": { en: "Sender", ru: "Отправитель", 'uz-Latn': "Yuboruvchi" },
+  "Recipient": { en: "Recipient", ru: "Получатель", 'uz-Latn': "Qabul qiluvchi" },
+  "Recipient employee (optional)": { en: "Recipient employee (optional)", ru: "Сотрудник-получатель (необязательно)", 'uz-Latn': "Qabul qiluvchi xodim (ixtiyoriy)" },
+  "Entire department": { en: "Entire department", ru: "Всё подразделение", 'uz-Latn': "Butun bo‘lim" },
+  "Choose an employee for a private request, or send to the whole department.": { en: "Choose an employee for a private request, or send to the whole department.", ru: "Выберите сотрудника для личного обращения или отправьте всему подразделению.", 'uz-Latn': "Shaxsiy murojaat uchun xodimni tanlang yoki butun bo‘limga yuboring." },
   "Remove": { en: "Remove", ru: "Убрать", 'uz-Latn': "Olib tashlash" },
   "Additional assignees and departments": { en: "Additional assignees and departments", ru: "Дополнительные исполнители и подразделения", 'uz-Latn': "Qo‘shimcha ijrochilar va bo‘linmalar" },
   "Each assignee submits their own evidence. Task members can view all submitted evidence.": { en: "Each assignee submits their own evidence. Task members can view all submitted evidence.", ru: "Каждый исполнитель отправляет свои подтверждения. Участники задания видят все отправленные подтверждения.", 'uz-Latn': "Har bir ijrochi o‘z ish dalillarini topshiradi. Topshiriq ishtirokchilari barcha topshirilgan dalillarni ko‘ra oladi." },

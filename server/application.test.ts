@@ -47,6 +47,7 @@ beforeAll(async () => {
   await setup.query(`CREATE SCHEMA "${schema}"`); await setup.end();
   database = new pg.Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`, max: 5 });
   await database.query(await readFile(new URL('../migrations/001_secure_core.sql', import.meta.url), 'utf8'));
+  await database.query(await readFile(new URL('../migrations/002_ticket_recipients.sql', import.meta.url), 'utf8'));
   await database.query("INSERT INTO ut_departments(id,code,name) VALUES('dept','D1','Test department')");
   const hash = await hashPassword(password);
   for (const [id, role] of [['admin','ADMIN'],['director','DIRECTOR'],['worker','WORKER'],['other','WORKER']]) {
@@ -434,9 +435,45 @@ describe('administrative modules and security regressions', () => {
     expect((await request(other, '/state')).body.tickets.some(t => t.id === crossDepartment.body.id)).toBe(false);
     expect((await request(worker, '/tickets', 'POST', { title: 'Inactive department request', description: 'This destination is inactive.', departmentId: 'service-inactive', priority: 'MEDIUM' })).status).toBe(400);
     const ticket = await request(worker,'/tickets','POST',{title:'A real request',description:'Please resolve this request.',departmentId:'dept',priority:'MEDIUM'}); expect(ticket.status).toBe(201);
-    expect((await request(other,'/state')).body.tickets.some(t=>t.id===ticket.body.id)).toBe(false);
+    expect((await request(other,'/state')).body.tickets.find(t=>t.id===ticket.body.id).canRespond).toBe(true);
     expect((await request(worker,`/tickets/${ticket.body.id}/resolve`,'POST',{responseNote:'Self resolution'})).status).toBe(403);
     expect((await request(director,`/tickets/${ticket.body.id}/resolve`,'POST',{responseNote:'Resolved with documented action.'})).status).toBe(200);
+  });
+  it('routes department and employee requests to their recipients and preserves sender visibility', async () => {
+    await database.query("INSERT INTO ut_departments(id,code,name) VALUES('inbox-dept','INBOX','Recipient department')");
+    const hash = await hashPassword(password);
+    for (const id of ['recipient','colleague','membership-recipient']) {
+      await database.query('INSERT INTO ut_users(id,username,email,full_name,role,department_id,password_hash,active) VALUES($1,$1,$2,$1,\'WORKER\',$3,$4,true)', [id, `${id}@example.test`, id === 'membership-recipient' ? 'dept' : 'inbox-dept', hash]);
+    }
+    await database.query("INSERT INTO ut_memberships(user_id,department_id) VALUES('membership-recipient','inbox-dept')");
+    const recipient = await login('recipient'), colleague = await login('colleague'), member = await login('membership-recipient');
+    expect((await request(null, '/ticket-recipients?departmentId=inbox-dept')).status).toBe(401);
+    const directory = await request(worker, '/ticket-recipients?departmentId=inbox-dept');
+    expect(directory.body).toHaveLength(3);
+    expect(directory.body.find(u => u.id === 'recipient')).toEqual({id:'recipient',fullName:'recipient'});
+    const payload = {title:'Department assistance',description:'Please assist our department with this issue.',departmentId:'inbox-dept',priority:'MEDIUM'};
+    const department = await request(worker, '/tickets', 'POST', payload);
+    expect(department.status).toBe(201);
+    const ticketFor = async (client, id) => (await request(client, '/state')).body.tickets.find(t => t.id === id);
+    for (const client of [recipient, colleague, member]) expect((await ticketFor(client, department.body.id)).canRespond).toBe(true);
+    expect((await ticketFor(worker, department.body.id)).canRespond).toBe(false);
+    expect(await ticketFor(other, department.body.id)).toBeUndefined();
+    const direct = await request(worker, '/tickets', 'POST', {...payload,recipientUserId:'recipient'});
+    expect(direct.status).toBe(201);
+    expect((await ticketFor(recipient, direct.body.id)).recipientName).toBe('recipient');
+    expect(await ticketFor(colleague, direct.body.id)).toBeUndefined();
+    expect(await ticketFor(member, direct.body.id)).toBeUndefined();
+    expect(await ticketFor(admin, direct.body.id)).toBeDefined();
+    expect((await request(colleague, `/tickets/${direct.body.id}/resolve`, 'POST', {responseNote:'Unauthorized response'})).status).toBe(403);
+    expect((await request(worker, '/tickets', 'POST', {...payload,recipientUserId:'other'})).status).toBe(400);
+    expect((await request(worker, '/tickets', 'POST', {...payload,recipientUserId:'membership-recipient'})).status).toBe(201);
+    expect((await request(recipient, `/tickets/${direct.body.id}/resolve`, 'POST', {responseNote:'The issue has been fixed.'})).status).toBe(200);
+    const sent = await ticketFor(worker, direct.body.id);
+    expect(sent.status).toBe('RESOLVED');
+    expect(sent.responseNote).toBe('The issue has been fixed.');
+    expect(sent.resolvedByName).toBe('recipient');
+    expect((await request(recipient, `/tickets/${direct.body.id}/resolve`, 'POST', {responseNote:'Repeated response'})).status).toBe(409);
+    expect((await request(member, `/tickets/${department.body.id}/resolve`, 'POST', {responseNote:'Department request handled.'})).status).toBe(200);
   });
   it('guards report export and neutralizes spreadsheet formula injection', async () => {
     await create('FORMULA',{title:'=2+2'});
