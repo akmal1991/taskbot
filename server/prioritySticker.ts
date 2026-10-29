@@ -24,7 +24,7 @@ export function prioritySticker(priority: string): Buffer {
         { ty: 'gr', it: [{ ty: 'el', p: { a: 0, k: [0, 0] }, s: { a: 0, k: [416, 416] } }, fill(colors[priority] || colors.MEDIUM)] },
         { ty: 'gr', it: [{ ty: 'rc', p: { a: 0, k: [0, -40] }, s: { a: 0, k: [48, 172] }, r: { a: 0, k: 24 } }, fill([1, 1, 1, 1])] },
         { ty: 'gr', it: [{ ty: 'el', p: { a: 0, k: [0, 100] }, s: { a: 0, k: [52, 52] } }, fill([1, 1, 1, 1])] },
-      ],
+      ].reverse(),
     }],
   }));
 }
