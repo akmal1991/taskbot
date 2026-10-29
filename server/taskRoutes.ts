@@ -108,9 +108,11 @@ export function taskRoutes(database: pg.Pool) {
         input.deadline ?? t.deadline, input.priority ?? t.priority, input.requiresEvidence ?? t.requires_evidence,
         input.requiresApproval ?? t.requires_approval, input.draft ?? t.draft, JSON.stringify(payload)]);
       if (input.dependsOnIds) await dependencies(db, t.id, input.dependsOnIds);
-      if ((t.draft && input.draft === false) || (!t.draft && merged.assignedToId !== t.assignee_id))
-        await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'NEW_ASSIGNMENT',$4,$5)`,
-          [id('notice'), merged.assignedToId, t.id, t.plan_code, `New task assigned: ${input.title ?? t.title}.`]);
+      if ((t.draft && input.draft === false) || (!t.draft && merged.assignedToId !== t.assignee_id)) {
+        const recipients = t.data?.assignments ? assignmentsOf(t).map(member => member.userId) : [merged.assignedToId];
+        for (const userId of recipients) await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'NEW_ASSIGNMENT',$4,$5)`,
+          [id('notice'), userId, t.id, t.plan_code, `New task assigned: ${input.title ?? t.title}. Deadline: ${input.deadline ?? new Date(t.deadline).toISOString().slice(0, 10)}`]);
+      }
       await audit(db, req, t.status === 'COMPLETED' ? 'TASK_CORRECTED' : 'TASK_UPDATED', t.id, t, input, input.reason || '');
     });
     res.json({ ok: true });

@@ -25,6 +25,10 @@ export const AccountPanel: React.FC = () => {
     <section className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
       <h2 className="font-bold">{currentUser.fullName}</h2><p className="mt-2 text-sm text-slate-500">{currentUser.email} · {currentUser.role}</p>
       <p className="mt-4 text-sm">{currentUser.isTelegramBound ? currentUser.telegramUsername || currentUser.telegramId : t('Telegram is not linked')}</p>
+      {!currentUser.isTelegramBound && <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
+        <p>{t('To receive task notifications, press Start in the bot, open its Mini App, sign in, then verify your Telegram account here.')}</p>
+        <a className="inline-block font-semibold text-sky-700 underline dark:text-sky-400" href="https://t.me/UniTaskTashTech_bot">{t('Open in Telegram')}</a>
+      </div>}
       <button disabled={busy} className="mt-3 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => {
         if (currentUser.isTelegramBound) {
           if (window.confirm(t('Unlink this Telegram account?'))) void run(async () => { await api('/telegram/unlink', { method: 'POST' }); await reloadAuth(); });

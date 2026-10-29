@@ -5,7 +5,7 @@ export async function readSettings(db: DB) {
     notificationsEnabled: false, reminderHour: 9, reminderTemplate: '{task}: deadline {deadline}',
   };
 }
-export async function runNotificationJob(database: pg.Pool, job: 'reminders' | 'delivery', request: any = {}) {
+export async function runNotificationJob(database: pg.Pool, job: 'reminders' | 'delivery', request: any = {}, transport: typeof fetch = fetch) {
   const settings = await readSettings(database);
   if (!settings.notificationsEnabled) throw new HttpError(409, 'Enable notifications in system settings first.');
   if (job === 'delivery' && !process.env.TELEGRAM_BOT_TOKEN) throw new HttpError(503, 'Telegram delivery is not configured. Add the server-side bot token.');
@@ -27,15 +27,19 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
       }
     } else {
       const rows = (await db.query(`SELECT n.*,u.telegram_id,u.active FROM ut_notifications n JOIN ut_users u ON u.id=n.user_id
-        WHERE n.status IN ('WAITING','FAILED') AND n.attempts<5 AND n.next_attempt_at<=now() ORDER BY n.created_at LIMIT 20 FOR UPDATE OF n SKIP LOCKED`)).rows;
+        WHERE n.status IN ('WAITING','FAILED') AND n.attempts<5 AND n.next_attempt_at<=now()
+        AND u.active=true AND u.telegram_id IS NOT NULL ORDER BY n.created_at LIMIT 20 FOR UPDATE OF n SKIP LOCKED`)).rows;
       for (const n of rows) {
         let error = '';
         if (!n.telegram_id || !n.active) error = 'Recipient has no verified Telegram link or is inactive.';
         else {
           try {
-            const reply = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            const appUrl = process.env.APP_URL || (process.env.RENDER_EXTERNAL_URL || '');
+            const taskUrl = /^https:\/\//.test(appUrl) ? `${appUrl.replace(/\/$/, '')}/#tasks` : '';
+            const reply = await transport(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: n.telegram_id, text: `${n.title}\n${n.body}`.slice(0, 4096) }),
+              body: JSON.stringify({ chat_id: n.telegram_id, text: `${n.title}\n${n.body}`.slice(0, 4096),
+                ...(taskUrl && n.task_id ? { reply_markup: { inline_keyboard: [[{ text: 'Topshiriqni ochish', url: taskUrl }]] } } : {}) }),
               signal: AbortSignal.timeout(8000),
             });
             const data = await reply.json() as { ok?: boolean };
@@ -55,7 +59,10 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
   });
 }
 export function startNotificationScheduler(database: pg.Pool) {
-  const timer = setInterval(async () => {
+  let running = false;
+  const tick = async () => {
+    if (running) return;
+    running = true;
     try {
       const settings = await readSettings(database);
       if (!settings.notificationsEnabled) return;
@@ -64,6 +71,9 @@ export function startNotificationScheduler(database: pg.Pool) {
       if (hour === settings.reminderHour) await runNotificationJob(database, 'reminders');
       if (process.env.TELEGRAM_BOT_TOKEN) await runNotificationJob(database, 'delivery');
     } catch { /* Persistent delivery errors are retained on notification records. Setup errors do not log secrets. */ }
-  }, 60000);
+    finally { running = false; }
+  };
+  const timer = setInterval(tick, 15000);
+  void tick();
   timer.unref(); return timer;
 }

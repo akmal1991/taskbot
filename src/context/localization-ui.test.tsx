@@ -7,6 +7,7 @@ import { AppProvider, useApp } from './AppContext';
 import { LoginPage } from '../components/LoginPage';
 import { AdminPanel } from '../components/AdminPanel';
 import { TaskRegister } from '../components/TaskRegister';
+import { Header } from '../components/Header';
 import { localizeText } from '../utils/i18n';
 const window = new Window({ url:'https://unitask.example/' });
 const previous = new Map(), realFetch = globalThis.fetch;
@@ -107,6 +108,29 @@ async function mount(element) {
   return {container,root,unmount:async()=>{await act(async()=>root.unmount());container.remove();}};
 }
 describe('immediate and persistent language changes',()=>{
+  it('shows employee notifications in the header and opens the assigned workspace',async()=>{
+    const priorFetch=globalThis.fetch;
+    const notice={id:'notice-test',taskId:'task-test',title:'IT-01',messageText:'New task assigned',sentAt:new Date().toISOString(),isRead:false};
+    let read=false;
+    globalThis.fetch=async(url,options)=>{
+      if(String(url).endsWith('/auth/me')) return Response.json({user:{id:'worker-test',fullName:'Worker',role:'WORKER'},permissions:[],csrfToken:'test'});
+      if(String(url).endsWith('/notifications/notice-test/read')) {read=true;return Response.json({ok:true});}
+      return Response.json({...emptyState,notifications:[{...notice,isRead:read}]});
+    };
+    const {useAuth}=await import('./AuthContext');
+    const Probe=()=>{const app=useApp();return <><Header activeView="tasks" setActiveView={()=>{}}/><p id="opened-task">{app.activeTmaTaskId}</p></>;};
+    const Gate=()=>useAuth().user?<AppProvider><Probe/></AppProvider>:null;
+    let page;
+    try {
+      page=await mount(<AuthProvider><Gate/></AuthProvider>);
+      const bell=page.container.querySelector('button[aria-label="Notifications"]');
+      expect(bell).not.toBeNull(); expect(bell.textContent).toContain('1');
+      await act(async()=>bell.click());
+      expect(page.container.querySelector('section[aria-label="Notifications"]').textContent).toContain('IT-01');
+      await act(async()=>[...page.container.querySelectorAll('section button')].find(b=>b.textContent==='Ish maydonini ochish').click());
+      expect(read).toBe(true); expect(page.container.querySelector('#opened-task').textContent).toBe('task-test');
+    } finally {if(page) await page.unmount();globalThis.fetch=priorFetch;}
+  });
   it('switches the actual login form between separate Uzbek scripts without a reload',async()=>{
     authenticated=false;window.localStorage.clear();
     const page=await mount(<AuthProvider><LoginPage/></AuthProvider>);

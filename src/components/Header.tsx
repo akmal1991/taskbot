@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Smartphone, Bell, Sun, Moon, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -18,11 +18,21 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
     language,
     setLanguage,
     theme,
-    toggleTheme
+    toggleTheme,
+    markNotificationAsRead,
+    openTma
   } = useApp();
   const { logout, error: sessionError } = useAuth();
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
+  const [noticesOpen, setNoticesOpen] = useState(false);
+  const noticesRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (event: PointerEvent) => { if (!noticesRef.current?.contains(event.target as Node)) setNoticesOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setNoticesOpen(false); };
+    document.addEventListener('pointerdown', close); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape); };
+  }, []);
   const navigationItems = [
     { id: 'dashboard', label: 'Boshqaruv Paneli' },
     { id: 'tasks', label: 'Ish Reja Vazifalari' },
@@ -130,18 +140,34 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
         </a>
 
         {/* Notification bell */}
-        {canAccessView('scheduler', currentUser.role, permissions) && (
+        <div ref={noticesRef}>
           <button 
-            onClick={() => setActiveView('scheduler')}
+            onClick={() => setNoticesOpen(value => !value)}
+            aria-label="Notifications"
+            aria-expanded={noticesOpen}
             className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Telegram bildirishnomalari"
+            title="Notifications"
           >
             <Bell className="w-4 h-4" />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
+              <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-amber-500 px-1 text-[10px] font-bold text-slate-950">{unreadCount}</span>
             )}
           </button>
-        )}
+          {noticesOpen && <section aria-label="Notifications" className="absolute right-2 top-full z-50 mt-2 max-h-[70dvh] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="mb-3 font-bold">Notifications</h2>
+            {!notifications.length && <p className="py-4 text-sm text-slate-500">No notifications</p>}
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">{notifications.slice(0, 20).map(notice => <li key={notice.id} className={`py-3 text-sm ${notice.isRead ? 'text-slate-500' : 'text-slate-900 dark:text-slate-100'}`}>
+              <p className="font-semibold">{notice.title}</p><p className="mt-1 break-words">{notice.messageText}</p>
+              <time className="mt-1 block text-xs text-slate-500">{new Date(notice.sentAt).toLocaleString(language)}</time>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {notice.taskId && <button className="font-semibold text-sky-700 dark:text-sky-400" onClick={() => { if (!notice.isRead) void markNotificationAsRead(notice.id).catch(() => {}); setNoticesOpen(false); openTma(notice.taskId); }}>Ish maydonini ochish</button>}
+                {!notice.isRead && <button className="text-sky-700 underline dark:text-sky-400" onClick={() => { void markNotificationAsRead(notice.id).catch(() => {}); }}>Mark as read</button>}
+              </div>
+            </li>)}</ul>
+            {!currentUser.isTelegramBound && <p className="mt-3 text-xs text-slate-500">Link Telegram in My account to receive task messages.</p>}
+            <button className="mt-4 text-sm font-semibold text-sky-700 dark:text-sky-400" onClick={() => { setNoticesOpen(false); setActiveView('account'); }}>My account</button>
+          </section>}
+        </div>
       </div>
 
       <div className="w-full md:hidden">

@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID, createHmac } from 'node:crypto';
 import { createApplication } from './app';
 import { hashPassword, verifyPassword, digest } from './security';
+import { runNotificationJob } from './notifications';
 
 const schema = `unitask_test_${randomUUID().replaceAll('-', '')}`;
 const password = `${randomUUID()}-Test-only`;
@@ -474,6 +475,42 @@ describe('administrative modules and security regressions', () => {
     expect(sent.resolvedByName).toBe('recipient');
     expect((await request(recipient, `/tickets/${direct.body.id}/resolve`, 'POST', {responseNote:'Repeated response'})).status).toBe(409);
     expect((await request(member, `/tickets/${department.body.id}/resolve`, 'POST', {responseNote:'Department request handled.'})).status).toBe(200);
+  });
+  it('notifies all published task assignees and delivers only to linked Telegram recipients', async () => {
+    const draft = await create('NOTICE-TEAM', {draft:true,additionalAssignees:[{userId:'other',departmentId:'dept'}]});
+    expect((await database.query('SELECT id FROM ut_notifications WHERE task_id=$1',[draft.id])).rowCount).toBe(0);
+    expect((await request(admin, `/tasks/${draft.id}`, 'PATCH', {version:draft.version,draft:false})).status).toBe(200);
+    const rows=(await database.query('SELECT * FROM ut_notifications WHERE task_id=$1 ORDER BY user_id',[draft.id])).rows;
+    expect(rows.map(n=>n.user_id)).toEqual(['other','worker']);
+    const notices=(await request(worker,'/state')).body.notifications;
+    expect(notices.some(n=>n.taskId===draft.id&&!n.isRead)).toBe(true);
+    expect((await request(other,`/notifications/${rows.find(n=>n.user_id==='worker').id}/read`,'POST',{})).status).toBe(404);
+    // Isolate delivery fixtures: no real Telegram traffic leaves this test.
+    await database.query("UPDATE ut_notifications SET next_attempt_at=now()+interval '1 day' WHERE task_id<>$1 OR task_id IS NULL",[draft.id]);
+    await database.query("UPDATE ut_users SET telegram_id=NULL WHERE id='other'");
+    const previousToken=process.env.TELEGRAM_BOT_TOKEN, previousUrl=process.env.APP_URL;
+    process.env.TELEGRAM_BOT_TOKEN=botToken; process.env.APP_URL='https://unitask.example';
+    const calls=[];
+    const transport=async (url,options)=>{calls.push(JSON.parse(options.body));return Response.json({ok:true});};
+    try {
+      expect(await runNotificationJob(database,'delivery',{},transport)).toBe(1);
+      expect(calls).toHaveLength(1); expect(calls[0].chat_id).toBe('1001');
+      expect(calls[0].text).toContain('NOTICE-TEAM'); expect(calls[0].text).toContain('Deadline:');
+      expect(calls[0].reply_markup.inline_keyboard[0][0].url).toBe('https://unitask.example/#tasks');
+      expect(await runNotificationJob(database,'delivery',{},transport)).toBe(0);
+      const pending=(await database.query('SELECT * FROM ut_notifications WHERE task_id=$1 AND user_id=\'other\'',[draft.id])).rows[0];
+      expect(pending.attempts).toBe(0); expect(pending.status).toBe('WAITING');
+      await database.query("UPDATE ut_users SET telegram_id='2002' WHERE id='other'");
+      const rejected=async()=>Response.json({ok:false},{status:429});
+      expect(await runNotificationJob(database,'delivery',{},rejected)).toBe(1);
+      expect((await database.query('SELECT status FROM ut_notifications WHERE id=$1',[pending.id])).rows[0].status).toBe('FAILED');
+      await database.query('UPDATE ut_notifications SET next_attempt_at=now() WHERE id=$1',[pending.id]);
+      expect(await runNotificationJob(database,'delivery',{},transport)).toBe(1);
+      expect(calls[1].chat_id).toBe('2002');
+    } finally {
+      if(previousToken===undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN=previousToken;
+      if(previousUrl===undefined) delete process.env.APP_URL; else process.env.APP_URL=previousUrl;
+    }
   });
   it('guards report export and neutralizes spreadsheet formula injection', async () => {
     await create('FORMULA',{title:'=2+2'});
