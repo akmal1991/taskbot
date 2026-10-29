@@ -422,6 +422,17 @@ describe('administrative modules and security regressions', () => {
     expect((await request(admin,'/admin/jobs/run','POST',{job:'reminders'})).body.processed).toBe(0);
   });
   it('scopes tickets to their real owner and allows only authorized resolution', async () => {
+    await database.query("INSERT INTO ut_departments(id,code,name,active) VALUES('service-target','SERVICE','Service destination',true),('service-inactive','OFF','Inactive destination',false)");
+    expect((await request(null, '/ticket-departments')).status).toBe(401);
+    const directory = await request(worker, '/ticket-departments');
+    expect(directory.status).toBe(200);
+    expect(directory.body.find(d => d.id === 'service-target')).toEqual({ id: 'service-target', name: 'Service destination' });
+    expect(directory.body.some(d => d.id === 'service-inactive')).toBe(false);
+    expect((await request(worker, '/state')).body.departments.some(d => d.id === 'service-target')).toBe(false);
+    const crossDepartment = await request(worker, '/tickets', 'POST', { title: 'Other department request', description: 'Please help our department with this request.', departmentId: 'service-target', priority: 'MEDIUM' });
+    expect(crossDepartment.status).toBe(201);
+    expect((await request(other, '/state')).body.tickets.some(t => t.id === crossDepartment.body.id)).toBe(false);
+    expect((await request(worker, '/tickets', 'POST', { title: 'Inactive department request', description: 'This destination is inactive.', departmentId: 'service-inactive', priority: 'MEDIUM' })).status).toBe(400);
     const ticket = await request(worker,'/tickets','POST',{title:'A real request',description:'Please resolve this request.',departmentId:'dept',priority:'MEDIUM'}); expect(ticket.status).toBe(201);
     expect((await request(other,'/state')).body.tickets.some(t=>t.id===ticket.body.id)).toBe(false);
     expect((await request(worker,`/tickets/${ticket.body.id}/resolve`,'POST',{responseNote:'Self resolution'})).status).toBe(403);

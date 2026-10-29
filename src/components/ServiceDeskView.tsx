@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { api } from '../utils/api';
 import { useApp } from '../context/AppContext';
 import { ServiceDeskTicket, Priority } from '../types';
 import { 
@@ -14,7 +15,10 @@ import {
 } from 'lucide-react';
 
 export const ServiceDeskView: React.FC = () => {
-  const { tickets, departments, createTicket, resolveTicket, currentUser } = useApp();
+  const { tickets, createTicket, resolveTicket, currentUser } = useApp();
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(true);
+  const [sending, setSending] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<ServiceDeskTicket | null>(null);
@@ -24,11 +28,22 @@ export const ServiceDeskView: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState('');
-  const [departmentId, setDepartmentId] = useState(departments[0]?.id || '');
+  const [departmentId, setDepartmentId] = useState('');
   const [priority, setPriority] = useState<Priority>('MEDIUM');
   const [applicantName, setApplicantName] = useState(currentUser.fullName);
   const [applicantEmail, setApplicantEmail] = useState(currentUser.email);
   const [applicantPhone, setApplicantPhone] = useState(currentUser.phone);
+  useEffect(() => {
+    if (!isModalOpen) return;
+    setLoadingDepartments(true); setFormError('');
+    let cancelled = false;
+    api<{ id: string; name: string }[]>('/ticket-departments').then(data => {
+      if (cancelled) return;
+      setDepartments(data); setDepartmentId(current => data.some(d => d.id === current) ? current : data[0]?.id || '');
+    }).catch(error => { if (!cancelled) setFormError((error as Error).message); })
+      .finally(() => { if (!cancelled) setLoadingDepartments(false); });
+    return () => { cancelled = true; };
+  }, [isModalOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +55,7 @@ export const ServiceDeskView: React.FC = () => {
       return;
     }
 
+    setFormError(''); setSending(true);
     try { await createTicket({
       title: title.trim(),
       description: description.trim(),
@@ -49,7 +65,8 @@ export const ServiceDeskView: React.FC = () => {
       applicantEmail,
       applicantPhone,
       priority,
-    }); } catch { return; }
+    }); } catch (error) { setFormError((error as Error).message); return; }
+    finally { setSending(false); }
 
     setIsModalOpen(false);
     setTitle('');
@@ -81,7 +98,6 @@ export const ServiceDeskView: React.FC = () => {
 
         <button
           onClick={() => {
-            setFormError('');
             setIsModalOpen(true);
           }}
           className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
@@ -156,7 +172,7 @@ export const ServiceDeskView: React.FC = () => {
       {/* New Ticket Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full max-h-[90dvh] overflow-y-auto p-6 shadow-xl border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 Universitet Bo'limiga Murojaat Yuborish
@@ -180,7 +196,8 @@ export const ServiceDeskView: React.FC = () => {
                 <select
                   value={departmentId}
                   onChange={(e) => setDepartmentId(e.target.value)}
-                  disabled={departments.length === 0}
+                  required
+                  disabled={loadingDepartments || departments.length === 0 || sending}
                   className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg"
                 >
                   {departments.map(d => (
@@ -245,7 +262,7 @@ export const ServiceDeskView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={departments.length === 0}
+                  disabled={loadingDepartments || departments.length === 0 || sending}
                   className="px-4 py-2 bg-slate-900 dark:bg-indigo-600 hover:bg-slate-800 dark:hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-xs"
                 >
                   Yuborish

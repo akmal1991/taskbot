@@ -93,6 +93,9 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
     if (!(await database.query('UPDATE ut_notifications SET read_at=now() WHERE id=$1 AND user_id=$2 RETURNING id', [req.params.id, req.actor!.id])).rowCount) throw new HttpError(404, 'Notification not found.');
     res.json({ ok: true });
   }));
+  api.get('/ticket-departments', wrap(async (_req, res) => {
+    res.json((await database.query('SELECT id,name FROM ut_departments WHERE active=true ORDER BY name')).rows);
+  }));
   api.post('/tickets', wrap(async (req, res) => {
     const input = z.object({ title: z.string().trim().min(1).max(200), description: z.string().trim().min(1).max(20000),
       departmentId: z.string().max(128), priority: z.enum(['HIGH','MEDIUM','LOW']) }).strict().parse(req.body);
