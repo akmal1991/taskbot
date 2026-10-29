@@ -46,7 +46,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       database.query(`${usersSelect} WHERE ($1::boolean OR u.id=$2) ORDER BY u.full_name`, [actor.role !== 'WORKER', actor.id]),
       actor.permissions.includes('audit.read') ? database.query(`SELECT * FROM ut_audit
         WHERE ($1::boolean OR action LIKE 'TASK%' OR action LIKE 'EVIDENCE%' OR action IN ('COMMENT_ADDED','PROGRESS_UPDATED','ATTACHMENT_UPLOADED','REPORT_EXPORTED'))
-        ORDER BY created_at DESC LIMIT 500`, [actor.role === 'ADMIN']) : Promise.resolve({ rows: [] }),
+        ORDER BY created_at DESC LIMIT 500`, [['ADMIN', 'PROREKTOR'].includes(actor.role)]) : Promise.resolve({ rows: [] }),
       database.query('SELECT * FROM ut_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200', [actor.id]),
       database.query(`SELECT t.*,u.full_name,u.email,u.data,d.name AS department_name,source.name AS sender_department_name,
         recipient.full_name AS recipient_name,resolver.full_name AS resolved_by_name,${ticketRespondSQL} AS can_respond
@@ -55,13 +55,13 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
         LEFT JOIN ut_users resolver ON resolver.id=t.resolved_by_id WHERE ${ticketVisibleSQL} ORDER BY t.created_at DESC`, [actor.permissions.includes('tickets.resolve'), actor.id]),
       database.query(`SELECT DISTINCT p.id,p.title,p.year,p.active FROM ut_work_plans p LEFT JOIN ut_tasks t ON t.work_plan_id=p.id
         WHERE ($1::boolean OR t.assignee_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2)) AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
-        ORDER BY p.year DESC`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
+        ORDER BY p.year DESC`, [actor.role !== 'WORKER', actor.id, ['ADMIN', 'PROREKTOR'].includes(actor.role)]),
       database.query(`SELECT DISTINCT s.* FROM ut_sections s JOIN ut_work_plans p ON p.id=s.work_plan_id
         LEFT JOIN ut_tasks t ON t.section_id=s.id WHERE ($1::boolean OR t.assignee_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2))
         AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
-        ORDER BY s.number`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
+        ORDER BY s.number`, [actor.role !== 'WORKER', actor.id, ['ADMIN', 'PROREKTOR'].includes(actor.role)]),
       database.query('SELECT * FROM ut_categories WHERE active=true ORDER BY name'),
-      actor.role === 'ADMIN' ? database.query("SELECT * FROM ut_settings WHERE key LIKE 'job:%'") : Promise.resolve({ rows: [] }),
+      ['ADMIN', 'PROREKTOR'].includes(actor.role) ? database.query("SELECT * FROM ut_settings WHERE key LIKE 'job:%'") : Promise.resolve({ rows: [] }),
     ]);
     res.json({
       tasks, departments, users: users.rows.map(publicUser),
@@ -74,7 +74,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
         senderId: t.user_id, senderDepartmentName: t.sender_department_name || '', recipientUserId: t.recipient_user_id || '', recipientName: t.recipient_name || '', canRespond: t.can_respond, resolvedByName: t.resolved_by_name || '',
         departmentId: t.department_id, departmentName: t.department_name, applicantName: t.full_name, applicantEmail: t.email,
         applicantPhone: t.data?.phone || '', status: t.status, priority: t.priority, createdAt: t.created_at, responseNote: t.response_note, resolvedAt: t.resolved_at })),
-      queueJobs: actor.role === 'ADMIN' ? ['reminders','delivery'].map(name => {
+      queueJobs: ['ADMIN', 'PROREKTOR'].includes(actor.role) ? ['reminders','delivery'].map(name => {
         const previous = jobs.rows.find(j => j.key === `job:${name}`)?.value;
         return { id: name, name, queue: name === 'reminders' ? 'CRON_SCHEDULER' : 'TELEGRAM_SENDER', status: previous ? 'COMPLETED' : 'WAITING',
           scheduledTime: name === 'delivery' ? 'Every minute' : 'Configured Tashkent hour', lastRun: previous?.lastRun,
@@ -167,7 +167,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       const review = ['APPROVE_PROOF','REJECT_PROOF'].includes(input.action);
       const permission = review ? 'tasks.review' : input.action === 'CLOCK_IN' ? 'tasks.start' : 'tasks.submit';
       if (!req.actor!.permissions.includes(permission) || (review ? isAssignee(t, req.actor!.id) ||
-        (req.actor!.role !== 'ADMIN' && t.approver_id && t.approver_id !== req.actor!.id) : !isAssignee(t, req.actor!.id)))
+        (!['ADMIN', 'PROREKTOR'].includes(req.actor!.role) && t.approver_id && t.approver_id !== req.actor!.id) : !isAssignee(t, req.actor!.id)))
         throw new HttpError(403, 'This Telegram action is not permitted for this account and task.');
     });
     res.json({ authorized: true, user: { id: verified.user.id }, authDate: verified.authDate });

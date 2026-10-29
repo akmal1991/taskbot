@@ -96,7 +96,7 @@ export async function validateReferences(db: DB, fields: {
     !(await db.query('SELECT user_id FROM ut_memberships WHERE user_id=$1 AND department_id=$2', [fields.assignedToId, fields.departmentId])).rowCount)
     throw new HttpError(400, 'The assignee must belong to the selected department.');
   if (fields.approverId) {
-    const reviewer = (await db.query("SELECT * FROM ut_users WHERE id=$1 AND active=true AND role IN ('ADMIN','DIRECTOR')", [fields.approverId])).rows[0];
+    const reviewer = (await db.query("SELECT * FROM ut_users WHERE id=$1 AND active=true AND role IN ('ADMIN','PROREKTOR','DIRECTOR')", [fields.approverId])).rows[0];
     if (!reviewer || reviewer.id === fields.assignedToId) throw new HttpError(400, 'Choose an authorized reviewer other than the assignee.');
   }
   if (fields.workPlanId && !(await db.query('SELECT id FROM ut_work_plans WHERE id=$1 AND active=true', [fields.workPlanId])).rowCount)

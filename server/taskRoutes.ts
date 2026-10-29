@@ -85,7 +85,7 @@ export function taskRoutes(database: pg.Pool) {
         for (const member of assignmentsOf(t)) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: input.approverId === undefined ? t.approver_id : input.approverId });
       }
       if (!t.draft && input.draft === true) throw new HttpError(409, 'Published tasks cannot become deletable drafts. Archive the record instead.');
-      if (t.status === 'COMPLETED' && (req.actor!.role !== 'ADMIN' || !input.reason?.trim()))
+      if (t.status === 'COMPLETED' && (!['ADMIN', 'PROREKTOR'].includes(req.actor!.role) || !input.reason?.trim()))
         throw new HttpError(403, 'Completed records require an administrator correction with a reason.');
       const merged = {
         assignedToId: input.assignedToId ?? t.assignee_id, departmentId: input.departmentId ?? t.department_id,
@@ -213,7 +213,7 @@ export function taskRoutes(database: pg.Pool) {
     const input = versionSchema.extend({ evidenceId: z.string().max(128), decision: z.enum(['APPROVED','REJECTED']), remarks: text.min(1) }).strict().parse(req.body);
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version); requireExecutable(t);
-      if (isAssignee(t, req.actor!.id) || (req.actor!.role !== 'ADMIN' && t.approver_id && t.approver_id !== req.actor!.id))
+      if (isAssignee(t, req.actor!.id) || (!['ADMIN', 'PROREKTOR'].includes(req.actor!.role) && t.approver_id && t.approver_id !== req.actor!.id))
         throw new HttpError(403, 'Self-approval and review by an undesignated reviewer are not allowed.');
       if (t.status !== 'SUBMITTED_FOR_REVIEW') throw new HttpError(409, 'Task is not awaiting review.');
       const candidate = (await db.query('SELECT * FROM ut_evidence WHERE task_id=$1 AND id=$2', [t.id, input.evidenceId])).rows[0];

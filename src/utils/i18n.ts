@@ -120,6 +120,7 @@ const dataLabelTranslations: Record<string, Partial<Record<Language, string>>> =
   LOW: { 'uz-Latn': 'Past', 'uz-Cyrl': 'Паст', en: 'Low', ru: 'Низкий' },
   DIRECTOR: { 'uz-Latn': 'Rektor', 'uz-Cyrl': 'Ректор', en: 'Director', ru: 'Ректор' },
   ADMIN: { 'uz-Latn': 'Tizim administratori', 'uz-Cyrl': 'Тизим администратори', en: 'Administrator', ru: 'Администратор' },
+  PROREKTOR: { 'uz-Latn': 'Prorektor', 'uz-Cyrl': 'Проректор', en: 'Prorektor', ru: 'Проректор' },
   WORKER: { 'uz-Latn': 'Xodim', 'uz-Cyrl': 'Ходим', en: 'Staff member', ru: 'Сотрудник' },
   'Tizim Xavfsizligi': { 'uz-Latn': 'Tizim xavfsizligi', 'uz-Cyrl': 'Тизим хавфсизлиги', en: 'System security', ru: 'Безопасность системы' },
   'Admin Konsoli': { 'uz-Latn': 'Admin konsoli', 'uz-Cyrl': 'Админ консоли', en: 'Admin console', ru: 'Консоль администратора' },

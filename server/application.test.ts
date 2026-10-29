@@ -49,6 +49,7 @@ beforeAll(async () => {
   database = new pg.Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`, max: 5 });
   await database.query(await readFile(new URL('../migrations/001_secure_core.sql', import.meta.url), 'utf8'));
   await database.query(await readFile(new URL('../migrations/002_ticket_recipients.sql', import.meta.url), 'utf8'));
+  await database.query(await readFile(new URL('../migrations/003_prorektor_role.sql', import.meta.url), 'utf8'));
   await database.query("INSERT INTO ut_departments(id,code,name) VALUES('dept','D1','Test department')");
   const hash = await hashPassword(password);
   for (const [id, role] of [['admin','ADMIN'],['director','DIRECTOR'],['worker','WORKER'],['other','WORKER']]) {
@@ -517,6 +518,25 @@ describe('administrative modules and security regressions', () => {
     const response = await fetch(`${base}/api/reports/tasks.csv`,{headers:{Cookie:director.cookie}});
     expect(response.status).toBe(200); expect(await response.text()).toContain("\"'=2+2\"");
     expect((await request(worker,'/reports/tasks.csv')).status).toBe(403);
+  });
+  it('gives Prorektor the same full administrator access while preserving safety rules', async () => {
+    const created=await request(admin,'/admin/users','POST',{username:'prorektor',email:'prorektor@example.test',fullName:'Test Prorektor',role:'PROREKTOR',departmentId:'dept'});
+    expect(created.status).toBe(201);
+    await database.query("UPDATE ut_users SET active=true,password_hash=$1 WHERE username='prorektor'",[await hashPassword(password)]);
+    const prorektor=await login('prorektor');
+    expect(prorektor.user.role).toBe('PROREKTOR');
+    const adminState=await request(admin,'/state'), proState=await request(prorektor,'/state');
+    expect(proState.status).toBe(200); expect(proState.body.queueJobs).toHaveLength(adminState.body.queueJobs.length);
+    const overview=await request(prorektor,'/admin/overview');
+    expect(overview.status).toBe(200);
+    expect(overview.body.rolePermissions.PROREKTOR).toEqual(overview.body.rolePermissions.ADMIN);
+    expect((await request(prorektor,'/admin/role-permissions/PROREKTOR','PUT',{permissions:[]})).status).toBe(400);
+    expect((await request(prorektor,'/admin/departments','POST',{code:'PRO',name:'Prorektor managed department'})).status).toBe(201);
+    const task=await request(prorektor,'/tasks','POST',inputTask('PRO-ASSIGNED',{approverId:prorektor.user.id}));
+    expect(task.status).toBe(201);
+    expect((await request(prorektor,`/tasks/${task.body.task.id}/archive`,'POST',{version:task.body.task.version,reason:'Authorized administrative archive'})).status).toBe(200);
+    expect((await request(prorektor,'/reports/tasks.csv')).status).toBe(200);
+    expect((await request(prorektor,'/admin/users/admin','PATCH',{username:'admin',email:'admin@example.test',fullName:'admin',role:'WORKER',departmentId:'dept',active:true})).status).toBe(409);
   });
   it('supports password changes, idle expiry, generic recovery, and shared login throttling', async () => {
     const session = await login('other');

@@ -213,6 +213,7 @@ const getRoleBadgeStyle = (role: string) => {
   switch (role) {
     case 'DIRECTOR':
       return 'bg-purple-100 dark:bg-purple-950/70 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-800/40';
+    case 'PROREKTOR':
     case 'ADMIN':
       return 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/40';
     case 'WORKER':
@@ -226,6 +227,7 @@ const getRoleInitialColor = (role: string) => {
   switch (role) {
     case 'DIRECTOR':
       return 'bg-purple-600 text-white';
+    case 'PROREKTOR':
     case 'ADMIN':
       return 'bg-amber-600 text-white';
     case 'WORKER':
@@ -307,7 +309,7 @@ export const TaskRegister: React.FC = () => {
     if (!departments.some(d => d.id === newDeptId && d.active !== false)) {
       setNewDeptId(departments.find(d => d.active !== false)?.id || '');
     }
-    if (newApproverId && (newApproverId === newAssigneeId || !users.some(u => u.id === newApproverId && u.active && ['ADMIN', 'DIRECTOR'].includes(u.role)))) setNewApproverId('');
+    if (newApproverId && (newApproverId === newAssigneeId || !users.some(u => u.id === newApproverId && u.active && ['ADMIN', 'PROREKTOR', 'DIRECTOR'].includes(u.role)))) setNewApproverId('');
   }, [users, departments, newAssigneeId, newDeptId, newApproverId]);
 
   // Always get fresh task state from tasks
@@ -2111,7 +2113,7 @@ export const TaskRegister: React.FC = () => {
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Reviewer</label>
                 <select value={newApproverId} onChange={e => setNewApproverId(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800">
                   <option value="">Any authorized reviewer</option>
-                  {users.filter(u => u.active && ['ADMIN','DIRECTOR'].includes(u.role) && u.id !== newAssigneeId && !additionalAssignees.some(a => a.userId === u.id)).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  {users.filter(u => u.active && ['ADMIN','PROREKTOR','DIRECTOR'].includes(u.role) && u.id !== newAssigneeId && !additionalAssignees.some(a => a.userId === u.id)).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                 </select>
               </div>
               <div>

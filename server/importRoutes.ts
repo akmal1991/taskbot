@@ -144,7 +144,7 @@ export function importRoutes(database: pg.Pool) {
       }
       for (const t of data.tasks) {
         const creator = data.users.some(u => u.id === t.createdById) ? t.createdById : req.actor!.id;
-        const approver = t.approverId !== t.assignedToId && ['ADMIN','DIRECTOR'].includes(input.roleMapping[t.approverId]) ? t.approverId : null;
+        const approver = t.approverId !== t.assignedToId && ['ADMIN','PROREKTOR','DIRECTOR'].includes(input.roleMapping[t.approverId]) ? t.approverId : null;
         const status = migratedStatus(t);
         await db.query(`INSERT INTO ut_tasks(id,plan_code,title,creator_id,assignee_id,approver_id,department_id,work_plan_id,section_id,
           deadline,status,priority,progress,data,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
@@ -163,7 +163,7 @@ export function importRoutes(database: pg.Pool) {
           const reviewers = data.users.filter(u => p.reviewedById ? u.id === p.reviewedById : u.fullName === p.reviewedBy);
           const reviewer = reviewers.length === 1 ? reviewers[0] : undefined;
           if (reviewer && reviewer.id !== (p.submittedById || t.assignedToId) &&
-            ['ADMIN','DIRECTOR'].includes(input.roleMapping[reviewer.id]) && ['APPROVED','REJECTED'].includes(p.status))
+            ['ADMIN','PROREKTOR','DIRECTOR'].includes(input.roleMapping[reviewer.id]) && ['APPROVED','REJECTED'].includes(p.status))
             await db.query('INSERT INTO ut_reviews(id,evidence_id,reviewer_id,decision,remarks,created_at) VALUES($1,$2,$3,$4,$5,$6)',
               [id('review'), p.id, reviewer.id, p.status, p.reviewerRemarks || '', safeTime(p.reviewedAt || p.submittedAt)]);
         }

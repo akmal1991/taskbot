@@ -333,7 +333,7 @@ export const ProofVerificationConsole: React.FC = () => {
 
               {/* Verification Action Form (only if pending or can re-review) */}
               {selectedTask.status === 'SUBMITTED_FOR_REVIEW' && selectedTask.assignedToId !== currentUser.id &&
-                (currentUser.role === 'ADMIN' || !selectedTask.approverId || selectedTask.approverId === currentUser.id) && (
+                (['ADMIN', 'PROREKTOR'].includes(currentUser.role) || !selectedTask.approverId || selectedTask.approverId === currentUser.id) && (
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">

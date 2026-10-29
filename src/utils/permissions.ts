@@ -2,16 +2,16 @@ import type { UserRole } from '../types';
 import type { Permission } from '../../shared/policy';
 
 const viewRoles: Record<string, readonly UserRole[]> = {
-  dashboard: ['DIRECTOR', 'ADMIN', 'WORKER'],
-  tasks: ['DIRECTOR', 'ADMIN', 'WORKER'],
-  proofs: ['DIRECTOR', 'ADMIN'],
-  excel: ['ADMIN'],
-  users: ['ADMIN'],
-  admin: ['ADMIN'],
-  scheduler: ['ADMIN'],
-  audit: ['DIRECTOR', 'ADMIN'],
-  servicedesk: ['DIRECTOR', 'ADMIN', 'WORKER'],
-  account: ['DIRECTOR', 'ADMIN', 'WORKER'],
+  dashboard: ['DIRECTOR', 'ADMIN', 'PROREKTOR', 'WORKER'],
+  tasks: ['DIRECTOR', 'ADMIN', 'PROREKTOR', 'WORKER'],
+  proofs: ['DIRECTOR', 'ADMIN', 'PROREKTOR'],
+  excel: ['ADMIN', 'PROREKTOR'],
+  users: ['ADMIN', 'PROREKTOR'],
+  admin: ['ADMIN', 'PROREKTOR'],
+  scheduler: ['ADMIN', 'PROREKTOR'],
+  audit: ['DIRECTOR', 'ADMIN', 'PROREKTOR'],
+  servicedesk: ['DIRECTOR', 'ADMIN', 'PROREKTOR', 'WORKER'],
+  account: ['DIRECTOR', 'ADMIN', 'PROREKTOR', 'WORKER'],
 };
 
 const viewPermissions: Record<string, Permission> = { proofs: 'tasks.review', excel: 'imports.manage', users: 'users.manage',

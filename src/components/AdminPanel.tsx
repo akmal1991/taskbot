@@ -28,7 +28,7 @@ const tabs: { id: Area; label: string; icon: React.ElementType }[] = [
   { id: 'roles', label: 'Role permissions', icon: Shield }, { id: 'plans', label: 'Work plans & categories', icon: Layers3 }, { id: 'tasks', label: 'Task maintenance', icon: ClipboardList },
   { id: 'settings', label: 'Settings', icon: Cog }, { id: 'delivery', label: 'Deliveries & jobs', icon: Play }, { id: 'migration', label: 'Migration', icon: Upload },
 ];
-const emptyOverview: Overview = { users: [], departments: [], rolePermissions: { ADMIN: [], DIRECTOR: [], WORKER: [] }, permissionCeilings: { ADMIN: [], DIRECTOR: [], WORKER: [] }, workPlans: [], categories: [], imports: [], settings: { notificationsEnabled: false, reminderHour: 9, reminderTemplate: '' }, deliveries: [], stats: { tasks: 0, users: 0, departments: 0 } };
+const emptyOverview: Overview = { users: [], departments: [], rolePermissions: { ADMIN: [], PROREKTOR: [], DIRECTOR: [], WORKER: [] }, permissionCeilings: { ADMIN: [], PROREKTOR: [], DIRECTOR: [], WORKER: [] }, workPlans: [], categories: [], imports: [], settings: { notificationsEnabled: false, reminderHour: 9, reminderTemplate: '' }, deliveries: [], stats: { tasks: 0, users: 0, departments: 0 } };
 
 export const AdminPanel: React.FC = () => {
   const app = useApp() as unknown as PanelApp;
@@ -142,7 +142,7 @@ export const AdminPanel: React.FC = () => {
     { label: 'Departments', value: overview.stats.departments, icon: Building2, color: 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40' },
   ];
 
-  if (app.currentUser?.role !== 'ADMIN') return <AdminPanelShell title={t('Administration')}><AdminAlert tone="error">{t('Administrator access is required to view this console.')}</AdminAlert></AdminPanelShell>;
+  if (!['ADMIN', 'PROREKTOR'].includes(app.currentUser?.role)) return <AdminPanelShell title={t('Administration')}><AdminAlert tone="error">{t('Administrator access is required to view this console.')}</AdminAlert></AdminPanelShell>;
   if (loading) return <AdminPanelShell title={t('Administration')} subtitle={t('Loading current system data')}><AdminSkeleton /></AdminPanelShell>;
 
   return <AdminPanelShell title={t('Administration')} subtitle={t('Central control for accounts, work plans, task governance, and system operations.')}>
@@ -263,8 +263,8 @@ function CheckField({ label, checked, onChange }: { label: string; checked: bool
 function RolePermissions({ role, enabled, ceiling, onSave, busy, t }: { role: Role; enabled: string[]; ceiling: string[]; onSave: (permissions: string[]) => void; busy: boolean; t: (value: string) => string }) {
   const [selected, setSelected] = useState(enabled);
   useEffect(() => setSelected(enabled), [enabled.join('|')]);
-  const locked = role === 'ADMIN';
-  return <article className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><header className="flex items-center justify-between gap-3"><div><RoleChip role={role} /><p className="mt-1 text-xs text-slate-500">{t('Permission ceiling')}: {ceiling.length}</p></div><AdminButton tone="primary" disabled={busy || locked} onClick={() => onSave(selected)}>{t('Save permissions')}</AdminButton></header><div className="mt-4 grid gap-x-4 gap-y-2 sm:grid-cols-2">{PERMISSIONS.map(permission => { const allowed = ceiling.includes(permission); return <label key={permission} className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm ${allowed ? '' : 'opacity-45'}`}><input type="checkbox" checked={role === 'ADMIN' || selected.includes(permission)} disabled={!allowed || locked} onChange={e => setSelected(value => e.target.checked ? [...value, permission] : value.filter(p => p !== permission))} className="accent-sky-700" /><span>{t(PERMISSION_NAMES[permission] || permission)}</span></label>; })}</div></article>;
+  const locked = ['ADMIN', 'PROREKTOR'].includes(role);
+  return <article className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><header className="flex items-center justify-between gap-3"><div><RoleChip role={role} /><p className="mt-1 text-xs text-slate-500">{t('Permission ceiling')}: {ceiling.length}</p></div><AdminButton tone="primary" disabled={busy || locked} onClick={() => onSave(selected)}>{t('Save permissions')}</AdminButton></header><div className="mt-4 grid gap-x-4 gap-y-2 sm:grid-cols-2">{PERMISSIONS.map(permission => { const allowed = ceiling.includes(permission); return <label key={permission} className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm ${allowed ? '' : 'opacity-45'}`}><input type="checkbox" checked={['ADMIN', 'PROREKTOR'].includes(role) || selected.includes(permission)} disabled={!allowed || locked} onChange={e => setSelected(value => e.target.checked ? [...value, permission] : value.filter(p => p !== permission))} className="accent-sky-700" /><span>{t(PERMISSION_NAMES[permission] || permission)}</span></label>; })}</div></article>;
 }
 function SettingsForm({ initial, onSave, busy, t }: { initial: Overview['settings']; onSave: (settings: Overview['settings']) => void; busy: boolean; t: (value: string) => string }) {
   const [value, setValue] = useState(initial);

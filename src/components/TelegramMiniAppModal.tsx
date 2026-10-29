@@ -19,7 +19,7 @@ export const TelegramMiniAppModal: React.FC = () => {
   const inTelegram = telegramLaunch || Boolean((window as any).Telegram?.WebApp?.initData);
   const own = tasks.filter(task => task.assignedToId === currentUser.id && !task.draft && !task.archivedAt);
   const reviews = tasks.filter(task => task.status === 'SUBMITTED_FOR_REVIEW' && !task.archivedAt && task.assignedToId !== currentUser.id &&
-    (currentUser.role === 'ADMIN' || !task.approverId || task.approverId === currentUser.id));
+    (['ADMIN', 'PROREKTOR'].includes(currentUser.role) || !task.approverId || task.approverId === currentUser.id));
   const task = tasks.find(item => item.id === taskId);
   useEffect(() => {
     if (!isTmaOpen) return;

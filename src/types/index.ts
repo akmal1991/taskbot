@@ -1,4 +1,4 @@
-export type UserRole = 'ADMIN' | 'DIRECTOR' | 'WORKER';
+export type UserRole = 'ADMIN' | 'PROREKTOR' | 'DIRECTOR' | 'WORKER';
 
 export type TaskStatus = 
   | 'PENDING' 

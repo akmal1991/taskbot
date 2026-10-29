@@ -141,7 +141,7 @@ export function parseExcelWorkbook(
     }
     const reviewerMatches = approver ? users.filter(u => [u.fullName,u.id,u.email].some(v => v.toLowerCase() === approver.toLowerCase())) : [];
     const reviewer = reviewerMatches.length === 1 ? reviewerMatches[0] : undefined;
-    if (approver && (!reviewer || !['ADMIN','DIRECTOR'].includes(reviewer.role) || reviewer.id === worker?.id)) {
+    if (approver && (!reviewer || !['ADMIN','PROREKTOR','DIRECTOR'].includes(reviewer.role) || reviewer.id === worker?.id)) {
       report.errors.push(`Qator ${rowIndex}: Nazoratchi topilmadi yoki tasdiqlash vakolatiga ega emas.`);
       report.skipped++; rowIndex++; continue;
     }

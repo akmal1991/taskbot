@@ -91,7 +91,7 @@ async function membership(db: pg.PoolClient, userId: string, departmentId?: stri
 }
 export function adminRoutes(database: pg.Pool) {
   const router = Router();
-  router.use((req, _res, next) => next(req.actor?.role === 'ADMIN' ? undefined : new HttpError(403, 'Administrator access required.')));
+  router.use((req, _res, next) => next(['ADMIN', 'PROREKTOR'].includes(req.actor?.role || '') ? undefined : new HttpError(403, 'Administrator access required.')));
   router.get('/overview', wrap(async (req, res) => {
     const [users, departments, roles, plans, sections, categories, imports, deliveries, stats] = await Promise.all([
       database.query(`${usersSelect} ORDER BY u.full_name`), getDepartments(database),
@@ -167,7 +167,7 @@ export function adminRoutes(database: pg.Pool) {
     const role = z.enum(ROLES).parse(req.params.role);
     const { permissions } = z.object({ permissions: z.array(z.string()).max(100) }).strict().parse(req.body);
     if (permissions.some(p => !ROLE_CEILINGS[role].includes(p as any))) throw new HttpError(400, 'A role cannot exceed its security ceiling.');
-    if (role === 'ADMIN' && ROLE_CEILINGS.ADMIN.some(p => !permissions.includes(p))) throw new HttpError(400, 'Essential administrator permissions cannot be removed.');
+    if (['ADMIN', 'PROREKTOR'].includes(role) && ROLE_CEILINGS.ADMIN.some(p => !permissions.includes(p))) throw new HttpError(400, 'Essential administrator permissions cannot be removed.');
     await transaction(database, async db => {
       const before = (await db.query('SELECT permissions FROM ut_role_permissions WHERE role=$1', [role])).rows[0]?.permissions;
       await db.query('INSERT INTO ut_role_permissions(role,permissions) VALUES($1,$2) ON CONFLICT(role) DO UPDATE SET permissions=excluded.permissions', [role, JSON.stringify([...new Set(permissions)])]);
