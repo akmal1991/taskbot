@@ -29,6 +29,9 @@ No production migration/provisioning has been performed in this implementation s
 - Activation/reset tokens are hashed, single-use and expire after one hour. Recovery requests are generic and administrator-assisted; no email is pretended to be sent.
 
 ## Task lifecycle and evidence
+Tasks may include up to 50 named assignees across departments. Select the primary assignee/department and add additional assignee/department pairs at creation. Every assignee must be active and belong to their selected department; reviewers must be outside the task team. Team membership is fixed after creation to preserve evidence ownership.
+Each member has independent progress, submission and review state. Task participants can read each other's submitted evidence and download its attachments, but cannot access other members' unsubmitted uploads. Users outside the team retain no additional access. Overall completion requires every member to complete their contribution; approval remains per member where required. Notifications and reminders target each outstanding assignee. Existing single-assignee tasks retain their prior behavior. Bounded team state is stored in the existing task JSONB record and updated under the task row lock; no production schema migration is required for this feature.
+
 `PENDING → ASSIGNED → IN_PROGRESS → SUBMITTED_FOR_REVIEW → COMPLETED`; normal creation assigns immediately.
 A rejected submission returns to IN_PROGRESS while preserving the submitted evidence and review decision.
 Overdue is a computed property using Asia/Tashkent dates, not another editable lifecycle state.

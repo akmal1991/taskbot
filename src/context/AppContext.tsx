@@ -36,7 +36,7 @@ const empty: ServerState = { users: [], departments: [], tasks: [], auditLogs: [
 const preference = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const storePreference = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* Preferences are optional; records are always server-owned. */ } };
 const taskFields = ['planCode','title','description','expectedOutcome','acceptanceCriteria','sourceReference','fundingSource','assignedDate',
-  'assignedToId','departmentId','approverId','workPlanId','sectionId','categoryId','priority','deadline','requiresEvidence','requiresApproval','draft','dependsOnIds'] as const;
+  'assignedToId','departmentId','additionalAssignees','approverId','workPlanId','sectionId','categoryId','priority','deadline','requiresEvidence','requiresApproval','draft','dependsOnIds'] as const;
 const pickTaskInput = (task: Partial<Task>) => Object.fromEntries(taskFields.filter(k => task[k] !== undefined).map(k => [k, task[k]]));
 
 export const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => {

@@ -14,13 +14,15 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
       throw new HttpError(409, 'This notification job is already running.');
     let processed = 0;
     if (job === 'reminders') {
-      const tasks = (await db.query(`SELECT t.* FROM ut_tasks t JOIN ut_users u ON u.id=t.assignee_id
-        WHERE u.active=true AND t.deadline<=(now() AT TIME ZONE 'Asia/Tashkent')::date+1 AND t.status<>'COMPLETED' AND NOT t.draft AND t.archived_at IS NULL
-        AND NOT EXISTS(SELECT 1 FROM ut_notifications n WHERE n.task_id=t.id AND n.type='DEADLINE_WARNING_2H'
+      const tasks = (await db.query(`SELECT t.*,member->>'userId' AS recipient_id FROM ut_tasks t
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.data->'assignments',jsonb_build_array(jsonb_build_object('userId',t.assignee_id,'status',t.status)))) member
+        JOIN ut_users u ON u.id=member->>'userId'
+        WHERE u.active=true AND t.deadline<=(now() AT TIME ZONE 'Asia/Tashkent')::date+1 AND member->>'status'<>'COMPLETED' AND NOT t.draft AND t.archived_at IS NULL
+        AND NOT EXISTS(SELECT 1 FROM ut_notifications n WHERE n.task_id=t.id AND n.user_id=u.id AND n.type='DEADLINE_WARNING_2H'
           AND (n.created_at AT TIME ZONE 'Asia/Tashkent')::date=(now() AT TIME ZONE 'Asia/Tashkent')::date)`)).rows;
       for (const t of tasks) {
         const body = String(settings.reminderTemplate).replaceAll('{task}', t.title).replaceAll('{deadline}', new Date(t.deadline).toISOString().slice(0, 10));
-        await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'DEADLINE_WARNING_2H',$4,$5)`, [id('notice'), t.assignee_id, t.id, t.plan_code, body]);
+        await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'DEADLINE_WARNING_2H',$4,$5)`, [id('notice'), t.recipient_id, t.id, t.plan_code, body]);
         processed++;
       }
     } else {

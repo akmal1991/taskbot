@@ -17,11 +17,12 @@ it('selects an active assignee when inactive accounts appear first or data arriv
   const previousFetch = globalThis.fetch;
   const staff = [
     { id: 'inactive', fullName: 'Inactive worker', role: 'WORKER', roleLabel: 'WORKER', active: false },
-    { id: 'active', fullName: 'Active worker', role: 'WORKER', roleLabel: 'WORKER', active: true },
+    { id: 'active', fullName: 'Active worker', role: 'WORKER', roleLabel: 'WORKER', active: true, departmentId: 'dept' },
+    { id: 'second', fullName: 'Second worker', role: 'WORKER', roleLabel: 'WORKER', active: true, departmentId: 'dept-two' },
   ];
   globalThis.fetch = async url => Response.json(String(url).endsWith('/auth/me') ? {
     user: { id: 'admin', role: 'ADMIN', fullName: 'Admin' }, permissions: ['tasks.create'], csrfToken: 'test',
-  } : { ...emptyState, users: staff, departments: [{ id: 'dept', name: 'IT', active: true }] });
+  } : { ...emptyState, users: staff, departments: [{ id: 'dept', name: 'IT', active: true }, { id: 'dept-two', name: 'Research', active: true }] });
   const { useAuth } = await import('./AuthContext');
   const Gate = () => useAuth().user ? <AppProvider><TaskRegister /></AppProvider> : null;
   let page;
@@ -32,6 +33,11 @@ it('selects an active assignee when inactive accounts appear first or data arriv
     expect(assignee.value).toBe('active');
     expect([...assignee.options].some(option => option.value === 'inactive')).toBe(false);
     expect(assignee.textContent).not.toContain('"},');
+    const addAssignee = page.container.querySelector('select[aria-label="Add assignee"]');
+    await act(async () => { addAssignee.value = 'second'; addAssignee.dispatchEvent(new window.Event('change', { bubbles: true })); });
+    expect(page.container.querySelector('fieldset').textContent).toContain('Second worker');
+    expect(page.container.querySelector('fieldset select[aria-label="Department"]').value).toBe('dept-two');
+    expect([...addAssignee.options].some(option => option.value === 'second')).toBe(false);
   } finally { if (page) await page.unmount(); globalThis.fetch = previousFetch; }
 });
 beforeAll(async () => {

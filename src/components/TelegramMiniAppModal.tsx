@@ -6,6 +6,7 @@ import { authorizeTelegramAction, type TelegramAction } from '../utils/telegramA
 import { localizeText } from '../utils/i18n';
 import type { ProofType } from '../types';
 import { telegramLaunch } from '../utils/telegramSdk';
+import { TaskTeamSummary } from './TaskTeamSummary';
 
 export const TelegramMiniAppModal: React.FC = () => {
   const { isTmaOpen, closeTma, tasks, currentUser, activeTmaTaskId, permissions, language,
@@ -80,6 +81,7 @@ export const TelegramMiniAppModal: React.FC = () => {
           {task && <article className="space-y-4 rounded-xl bg-[#213040] p-4">
             <p className="text-xs font-mono text-sky-300">{task.planCode} · {t(task.status)}</p>
             <h3 className="font-bold leading-snug">{task.title}</h3>
+            <TaskTeamSummary task={task} />
             <p className="whitespace-pre-wrap text-sm text-slate-300">{task.description}</p>
             {task.acceptanceCriteria && <p className="whitespace-pre-wrap text-sm">{task.acceptanceCriteria}</p>}
             <p className="text-xs">{t('Deadline')}: {task.deadline} · {task.progressPercent}%</p>
@@ -99,14 +101,16 @@ export const TelegramMiniAppModal: React.FC = () => {
               <label className="block text-sm">{t('Review remarks')}<textarea required minLength={1} maxLength={20000} value={remarks} onChange={e => setRemarks(e.target.value)} className="mt-1 w-full rounded-lg bg-[#18222d] p-3" /></label>
               <div className="flex gap-3">{(['REJECTED','APPROVED'] as const).map(decision => <button key={decision} disabled={busy || !remarks.trim()} className={`flex-1 rounded-lg p-3 text-sm font-bold disabled:opacity-50 ${decision === 'APPROVED' ? 'bg-emerald-700' : 'bg-rose-800'}`} onClick={() => { void run(async () => {
                 await authorize(decision === 'APPROVED' ? 'APPROVE_PROOF' : 'REJECT_PROOF', task.id);
-                if (decision === 'APPROVED') await approveProof(task.id, task.proofs[0]?.id || '', remarks);
-                else await rejectProof(task.id, task.proofs[0]?.id || '', remarks);
-                setRemarks(''); setTaskId('');
+                const pending = task.proofs.find(p => p.status === 'PENDING');
+                if (decision === 'APPROVED') await approveProof(task.id, pending?.id || '', remarks);
+                else await rejectProof(task.id, pending?.id || '', remarks);
+                setRemarks('');
               }); }}>{t(decision === 'APPROVED' ? 'Approve' : 'Return for revision')}</button>)}</div>
             </div>}
             {!!task.proofs.length && <section className="space-y-3 border-t border-slate-600 pt-4">
               <h4 className="font-semibold">{t('Evidence history')}</h4>
               {task.proofs.map(proof => <div key={proof.id} className="rounded-lg bg-[#18222d] p-3 text-sm">
+                <p className="mb-2 text-xs">{`${proof.submittedBy} — ${task.assignments?.find(a => a.userId === proof.submittedById)?.departmentName || ''}`}</p>
                 <p className="mb-2 text-xs text-sky-300">{t(proof.status)} · {new Date(proof.submittedAt).toLocaleString(language)}</p>
                 <p className="whitespace-pre-wrap">{proof.note}</p>
                 {proof.fileUrl && <a href={proof.fileUrl} className="mt-2 flex items-center gap-2 text-sky-300 underline"><ExternalLink size={14} />{proof.fileName}</a>}

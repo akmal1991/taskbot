@@ -88,6 +88,11 @@ export interface TaskComment {
 }
 
 export interface Task {
+  additionalAssignees?: { userId: string; departmentId: string }[];
+  assignments?: { userId: string; departmentId: string; fullName: string; departmentName: string; status: TaskStatus; progress: number }[];
+  departmentIds?: string[];
+  overallStatus?: TaskStatus;
+  overallProgress?: number;
   version?: number;
   archivedAt?: string;
   draft?: boolean;

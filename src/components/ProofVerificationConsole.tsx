@@ -39,7 +39,7 @@ export const ProofVerificationConsole: React.FC = () => {
     return t.proofs.length > 0;
   });
 
-  const activeProof: TaskProof | undefined = selectedTask?.proofs[0];
+  const activeProof: TaskProof | undefined = selectedTask?.proofs.find(p => p.status === 'PENDING') || selectedTask?.proofs[0];
 
   const handleApprove = async () => {
     if (!selectedTask || !activeProof) return;
@@ -124,7 +124,7 @@ export const ProofVerificationConsole: React.FC = () => {
             ) : (
               tasksWithProofs.map((task) => {
                 const isSelected = selectedTask?.id === task.id;
-                const latestProof = task.proofs[0];
+                const latestProof = task.proofs.find(p => p.status === 'PENDING') || task.proofs[0];
 
                 return (
                   <div

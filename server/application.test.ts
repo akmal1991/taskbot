@@ -67,6 +67,72 @@ afterAll(async () => {
   }
 });
 describe('server authentication and fixed-role isolation', () => {
+  it('tracks cross-department participants independently and shares only submitted evidence', async () => {
+    await database.query("INSERT INTO ut_departments(id,code,name) VALUES('team-dept','TEAM','Second department')");
+    await database.query("INSERT INTO ut_memberships(user_id,department_id) VALUES('other','team-dept')");
+    const created = await request(admin, '/tasks', 'POST', inputTask('TEAM-TASK', { additionalAssignees: [{ userId: 'other', departmentId: 'team-dept' }] }));
+    expect(created.status).toBe(201);
+    const taskId = created.body.task.id;
+    expect(created.body.task.assignments).toHaveLength(2);
+    expect((await taskFor(other, taskId)).assignedToId).toBe('other');
+    expect((await taskFor(other, taskId)).departmentId).toBe('team-dept');
+    const start = async client => { const t = await taskFor(client, taskId); expect((await request(client, `/tasks/${taskId}/start`, 'POST', { version: t.version })).status).toBe(200); };
+    await start(worker);
+    expect((await taskFor(other, taskId)).status).toBe('ASSIGNED');
+    await start(other);
+    const file = new FormData(); file.append('file', new Blob(['%PDF-1.4\nTeam evidence'], { type: 'application/pdf' }), 'team.pdf');
+    const uploaded = await request(worker, `/tasks/${taskId}/attachments`, 'POST', file);
+    expect(uploaded.status).toBe(201);
+    expect((await request(other, `/attachments/${uploaded.body.id}`)).status).toBe(404);
+    const submit = async (client, extra = {}) => {
+      const t = await taskFor(client, taskId);
+      const result = await request(client, `/tasks/${taskId}/evidence`, 'POST', { version: t.version, type: 'TEXT_NOTE', note: 'Completed my department contribution with supporting details.', ...extra });
+      expect(result.status).toBe(201);
+    };
+    await submit(worker, { type: 'DOCUMENT', attachmentId: uploaded.body.id });
+    expect((await request(other, `/attachments/${uploaded.body.id}`)).status).toBe(200);
+    expect((await taskFor(other, taskId)).proofs[0].submittedById).toBe('worker');
+    expect((await taskFor(other, taskId)).status).toBe('IN_PROGRESS');
+    await submit(other);
+    const review = async (author, decision) => {
+      const t = await taskFor(director, taskId);
+      const proof = t.proofs.find(p => p.submittedById === author && p.status === 'PENDING');
+      expect((await request(director, `/tasks/${taskId}/reviews`, 'POST', { version: t.version, evidenceId: proof.id, decision, remarks: 'Department contribution reviewed.' })).status).toBe(200);
+    };
+    await review('worker', 'REJECTED');
+    expect((await taskFor(worker, taskId)).status).toBe('IN_PROGRESS');
+    expect((await taskFor(other, taskId)).status).toBe('SUBMITTED_FOR_REVIEW');
+    await review('other', 'APPROVED');
+    expect((await taskFor(admin, taskId)).status).toBe('IN_PROGRESS');
+    expect((await taskFor(other, taskId)).status).toBe('COMPLETED');
+    await submit(worker);
+    await review('worker', 'APPROVED');
+    const complete = await taskFor(admin, taskId);
+    expect(complete.status).toBe('COMPLETED'); expect(complete.progressPercent).toBe(100);
+    expect(complete.proofs).toHaveLength(3);
+    const noticeCount = await database.query("SELECT count(*)::int AS count FROM ut_notifications WHERE task_id=$1 AND type='NEW_ASSIGNMENT'", [taskId]);
+    expect(noticeCount.rows[0].count).toBe(2);
+    const duplicate = await request(admin, '/tasks', 'POST', inputTask('TEAM-DUPLICATE', { additionalAssignees: [{ userId: 'worker', departmentId: 'dept' }] }));
+    expect(duplicate.status).toBe(400);
+    const invalid = await request(admin, '/tasks', 'POST', inputTask('TEAM-INVALID', { additionalAssignees: [{ userId: 'worker', departmentId: 'team-dept' }] }));
+    expect(invalid.status).toBe(400);
+    const selfReview = await request(admin, '/tasks', 'POST', inputTask('TEAM-SELF', { additionalAssignees: [{ userId: 'director', departmentId: 'dept' }] }));
+    expect(selfReview.status).toBe(400);
+    const withoutReview = await request(admin, '/tasks', 'POST', inputTask('TEAM-NO-REVIEW', { requiresApproval: false, additionalAssignees: [{ userId: 'other', departmentId: 'team-dept' }] }));
+    expect(withoutReview.status).toBe(201);
+    for (const member of [worker, other]) {
+      let t = await taskFor(member, withoutReview.body.task.id);
+      expect((await request(member, `/tasks/${t.id}/start`, 'POST', { version: t.version })).status).toBe(200);
+      t = await taskFor(member, t.id);
+      expect((await request(member, `/tasks/${t.id}/evidence`, 'POST', { version: t.version, type: 'TEXT_NOTE', note: 'My separate contribution has been completed in full.' })).status).toBe(201);
+      expect((await taskFor(admin, t.id)).status).toBe(member === worker ? 'IN_PROGRESS' : 'COMPLETED');
+    }
+    const outsiderHash = await hashPassword(password);
+    await database.query("INSERT INTO ut_users(id,username,email,full_name,role,password_hash,active) VALUES('team-outsider','team-outsider','outsider@example.test','Outsider','WORKER',$1,true)", [outsiderHash]);
+    const outsider = await login('team-outsider');
+    expect(await taskFor(outsider, taskId)).toBeUndefined();
+    expect((await request(outsider, `/attachments/${uploaded.body.id}`)).status).toBe(404);
+  });
   it('identifies duplicate usernames and emails without changing the existing account', async () => {
     const input = { username: 'WORKER', email: 'unique-account@example.test', fullName: 'Duplicate test', role: 'WORKER' };
     const usernameConflict = await request(admin, '/admin/users', 'POST', input);

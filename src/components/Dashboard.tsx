@@ -503,7 +503,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveView }) => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                 {departments.map((dept) => {
-                  const deptTasks = tasks.filter(t => t.departmentId === dept.id);
+                  const deptTasks = tasks.filter(t => t.departmentId === dept.id || t.departmentIds?.includes(dept.id));
                   const deptDone = deptTasks.filter(t => t.status === 'COMPLETED').length;
                   const deptAvgProgress = deptTasks.length > 0 
                     ? Math.round(deptTasks.reduce((acc, cur) => acc + cur.progressPercent, 0) / deptTasks.length)

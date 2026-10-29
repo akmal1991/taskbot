@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { localizeText } from '../utils/i18n';
+import { TaskTeamSummary } from './TaskTeamSummary';
 import { useApp } from '../context/AppContext';
 import { Task, Priority, TaskStatus, TaskComment } from '../types';
 import { exportTasksToExcel, exportTasksToCsv } from '../utils/excel';
@@ -295,6 +296,7 @@ export const TaskRegister: React.FC = () => {
   const [newSectionId, setNewSectionId] = useState(OFFICIAL_SECTIONS[0]?.id || '');
   const [newApproverId, setNewApproverId] = useState('');
   const [newAssigneeId, setNewAssigneeId] = useState(users.find(u => u.active && u.role === 'WORKER')?.id || users.find(u => u.active)?.id || '');
+  const [additionalAssignees, setAdditionalAssignees] = useState<{ userId: string; departmentId: string }[]>([]);
   const [newPriority, setNewPriority] = useState<Priority>('HIGH');
   const [newDeadline, setNewDeadline] = useState('2027-06-30');
 
@@ -424,7 +426,7 @@ export const TaskRegister: React.FC = () => {
       (task.approverName && task.approverName.toLowerCase().includes(q))
     );
 
-    const matchesDept = selectedDept === 'all' || task.departmentId === selectedDept;
+    const matchesDept = selectedDept === 'all' || task.departmentId === selectedDept || task.departmentIds?.includes(selectedDept);
     const matchesSection = selectedSection === 'all' || task.sectionId === selectedSection;
     const matchesStatus = selectedStatus === 'all' || (selectedStatus === 'OVERDUE' ? task.isOverdue : task.status === selectedStatus);
     const matchesPriority = selectedPriority === 'all' || task.priority === selectedPriority;
@@ -472,6 +474,7 @@ export const TaskRegister: React.FC = () => {
       departmentId: dept.id,
       departmentName: dept.name,
       assignedToId: assignee.id,
+      additionalAssignees,
       assignedToName: assignee.fullName,
       assignedToTelegramId: assignee.telegramId,
       assignedToTelegramUsername: assignee.telegramUsername,
@@ -486,6 +489,7 @@ export const TaskRegister: React.FC = () => {
 
     setIsCreateModalOpen(false);
     setNewTitle('');
+    setAdditionalAssignees([]);
     setNewDesc('');
     setNewExpectedOutcome('');
     setNewPlanCode(`TT-2026-${String(tasks.length + 2).padStart(2, '0')}`);
@@ -777,7 +781,7 @@ export const TaskRegister: React.FC = () => {
                 <option value="all">🏢 Барча бўлинмалар ({departments.length})</option>
                 {departments.map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.name} ({tasks.filter(t => t.departmentId === d.id).length})
+                    {`${d.name} (${tasks.filter(t => t.departmentId === d.id || t.departmentIds?.includes(d.id)).length})`}
                   </option>
                 ))}
               </select>
@@ -1518,6 +1522,7 @@ export const TaskRegister: React.FC = () => {
 
             {/* Modal Body */}
             <div className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
+              <TaskTeamSummary task={selectedTask} />
               {/* TAB 1: DETAILS */}
               {activeModalTab === 'details' && (
                 <div className="space-y-4">
@@ -1959,6 +1964,8 @@ export const TaskRegister: React.FC = () => {
                   ) : (
                     selectedTask.proofs.map((proof) => (
                       <div key={proof.id} className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg space-y-2">
+                        <p className="text-xs font-semibold">{`${proof.submittedBy} — ${selectedTask.assignments?.find(a => a.userId === proof.submittedById)?.departmentName || ''}`}</p>
+                        {proof.fileUrl && <a href={proof.fileUrl} className="block text-xs text-sky-600 underline">{proof.fileName}</a>}
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                             <FileCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -2104,7 +2111,7 @@ export const TaskRegister: React.FC = () => {
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Reviewer</label>
                 <select value={newApproverId} onChange={e => setNewApproverId(e.target.value)} className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800">
                   <option value="">Any authorized reviewer</option>
-                  {users.filter(u => u.active && ['ADMIN','DIRECTOR'].includes(u.role) && u.id !== newAssigneeId).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                  {users.filter(u => u.active && ['ADMIN','DIRECTOR'].includes(u.role) && u.id !== newAssigneeId && !additionalAssignees.some(a => a.userId === u.id)).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                 </select>
               </div>
               <div>
@@ -2149,7 +2156,7 @@ export const TaskRegister: React.FC = () => {
                   <select
                     required
                     value={newAssigneeId}
-                    onChange={(e) => setNewAssigneeId(e.target.value)}
+                    onChange={(e) => { setNewAssigneeId(e.target.value); setAdditionalAssignees(previous => previous.filter(a => a.userId !== e.target.value)); }}
                     className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg font-medium"
                   >
                     <option value="">Choose an active assignee.</option>
@@ -2162,6 +2169,22 @@ export const TaskRegister: React.FC = () => {
                 </div>
               </div>
 
+              <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                <legend className="px-1 font-semibold">Additional assignees and departments</legend>
+                <p className="text-xs text-slate-500">Each assignee submits their own evidence. Task members can view all submitted evidence.</p>
+                {additionalAssignees.map((member, index) => <div key={member.userId} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <span className="self-center text-xs">{users.find(u => u.id === member.userId)?.fullName}</span>
+                  <select aria-label="Department" required value={member.departmentId} onChange={e => setAdditionalAssignees(previous => previous.map((a, i) => i === index ? { ...a, departmentId: e.target.value } : a))} className="rounded-lg border bg-slate-50 p-2 text-xs dark:bg-slate-800">
+                    <option value="">Choose an active department.</option>
+                    {departments.filter(d => d.active !== false).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setAdditionalAssignees(previous => previous.filter(a => a.userId !== member.userId))} className="rounded-lg border px-3 py-2 text-xs">Remove</button>
+                </div>)}
+                <select aria-label="Add assignee" value="" disabled={additionalAssignees.length >= 49} onChange={e => { const u = users.find(u => u.id === e.target.value); if (u) { setAdditionalAssignees(previous => [...previous, { userId: u.id, departmentId: u.departmentId || '' }]); if (newApproverId === u.id) setNewApproverId(''); } }} className="w-full rounded-lg border bg-slate-50 p-2 text-xs dark:bg-slate-800">
+                  <option value="">Add assignee</option>
+                  {users.filter(u => u.active && u.id !== newAssigneeId && !additionalAssignees.some(a => a.userId === u.id)).map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                </select>
+              </fieldset>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Бажариш Муддати *</label>

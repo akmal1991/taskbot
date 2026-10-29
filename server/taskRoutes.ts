@@ -6,6 +6,7 @@ import { id, HttpError, transaction, audit } from './db';
 import { permit, wrap, digest } from './security';
 import { lockedTask, requireExecutable, getTasks, validateReferences } from './records';
 import { PRIORITIES } from '../shared/policy';
+import { assignmentsOf, assignmentOf, isAssignee, updateAssignment } from './taskAssignments';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v, 'Invalid date.');
 const text = z.string().trim().max(20000);
@@ -18,6 +19,7 @@ export const taskInput = z.object({
   categoryId: z.string().max(128).nullable().optional(), priority: z.enum(PRIORITIES), deadline: date,
   requiresEvidence: z.boolean().optional(), requiresApproval: z.boolean().optional(), draft: z.boolean().optional(),
   dependsOnIds: z.array(z.string().max(128)).max(100).optional(),
+  additionalAssignees: z.array(z.object({ userId: z.string().min(1).max(128), departmentId: z.string().min(1).max(128) }).strict()).max(49).optional(),
 });
 const versionSchema = z.object({ version: z.number().int().positive() });
 async function dependencies(db: pg.PoolClient, taskId: string, ids: string[]) {
@@ -35,8 +37,11 @@ async function dependencies(db: pg.PoolClient, taskId: string, ids: string[]) {
 }
 export async function insertTask(db: pg.PoolClient, actorId: string, input: z.infer<typeof taskInput>, preserveId?: string) {
   await validateReferences(db, input);
+  const team = [{ userId: input.assignedToId, departmentId: input.departmentId }, ...(input.additionalAssignees || [])];
+  if (new Set(team.map(a => a.userId)).size !== team.length) throw new HttpError(400, 'Each assignee may only be selected once.');
+  for (const member of team.slice(1)) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: input.approverId });
   const taskId = preserveId || id('task');
-  const data = { description: input.description || '', expectedOutcome: input.expectedOutcome, acceptanceCriteria: input.acceptanceCriteria,
+  const data = { ...(team.length > 1 ? { assignments: team.map(a => ({ ...a, status: 'ASSIGNED', progress: 0 })) } : {}), description: input.description || '', expectedOutcome: input.expectedOutcome, acceptanceCriteria: input.acceptanceCriteria,
     sourceReference: input.sourceReference, fundingSource: input.fundingSource, assignedDate: input.assignedDate || new Date().toISOString().slice(0, 10) };
   await db.query(`INSERT INTO ut_tasks(id,plan_code,title,creator_id,assignee_id,approver_id,department_id,work_plan_id,section_id,category_id,
     deadline,status,priority,requires_evidence,requires_approval,draft,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ASSIGNED',$12,$13,$14,$15,$16)`,
@@ -44,8 +49,8 @@ export async function insertTask(db: pg.PoolClient, actorId: string, input: z.in
     input.workPlanId || null, input.sectionId || null, input.categoryId || null, input.deadline, input.priority,
     input.requiresEvidence ?? true, input.requiresApproval ?? true, input.draft ?? false, JSON.stringify(data)]);
   await dependencies(db, taskId, input.dependsOnIds || []);
-  if (!input.draft) await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'NEW_ASSIGNMENT',$4,$5)`,
-    [id('notice'), input.assignedToId, taskId, input.planCode, `New task assigned: ${input.title}. Deadline: ${input.deadline}`]);
+  if (!input.draft) for (const member of team) await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'NEW_ASSIGNMENT',$4,$5)`,
+    [id('notice'), member.userId, taskId, input.planCode, `New task assigned: ${input.title}. Deadline: ${input.deadline}`]);
   return taskId;
 }
 export function taskRoutes(database: pg.Pool) {
@@ -54,7 +59,7 @@ export function taskRoutes(database: pg.Pool) {
     const all = await getTasks(database, req.actor!);
     const search = String(req.query.search || '').toLowerCase();
     const filtered = all.filter(t => (!search || `${t.planCode} ${t.title}`.toLowerCase().includes(search)) &&
-      (!req.query.status || t.status === req.query.status) && (!req.query.departmentId || t.departmentId === req.query.departmentId));
+      (!req.query.status || t.status === req.query.status) && (!req.query.departmentId || t.departmentId === req.query.departmentId || t.departmentIds?.includes(String(req.query.departmentId))));
     const page = Math.max(1, Number(req.query.page) || 1), pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 50));
     res.json({ items: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize });
   }));
@@ -74,6 +79,11 @@ export function taskRoutes(database: pg.Pool) {
       // Serialize dependency changes to protect cross-task cycle checks.
       await db.query('SELECT pg_advisory_xact_lock(741201)');
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version);
+      if (input.additionalAssignees !== undefined) throw new HttpError(409, 'Team assignments are fixed after task creation.');
+      if (t.data?.assignments && (input.assignedToId !== undefined || input.departmentId !== undefined || input.approverId !== undefined)) {
+        if ((input.assignedToId !== undefined && input.assignedToId !== t.assignee_id) || (input.departmentId !== undefined && input.departmentId !== t.department_id)) throw new HttpError(409, 'Team assignments are fixed after task creation.');
+        for (const member of assignmentsOf(t)) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: input.approverId === undefined ? t.approver_id : input.approverId });
+      }
       if (!t.draft && input.draft === true) throw new HttpError(409, 'Published tasks cannot become deletable drafts. Archive the record instead.');
       if (t.status === 'COMPLETED' && (req.actor!.role !== 'ADMIN' || !input.reason?.trim()))
         throw new HttpError(403, 'Completed records require an administrator correction with a reason.');
@@ -129,11 +139,12 @@ export function taskRoutes(database: pg.Pool) {
     const input = versionSchema.strict().parse(req.body);
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version); requireExecutable(t);
-      if (t.assignee_id !== req.actor!.id) throw new HttpError(403, 'Only the assignee may start a task.');
-      if (!['ASSIGNED', 'PENDING'].includes(t.status)) throw new HttpError(409, 'Task has already started or cannot be started.');
+      const own = assignmentOf(t, req.actor!.id);
+      if (!own) throw new HttpError(403, 'Only the assignee may start a task.');
+      if (!['ASSIGNED', 'PENDING'].includes(own.status)) throw new HttpError(409, 'Task has already started or cannot be started.');
       if ((await db.query(`SELECT 1 FROM ut_dependencies d JOIN ut_tasks t ON t.id=d.depends_on_id
         WHERE d.task_id=$1 AND t.status<>'COMPLETED'`, [t.id])).rowCount) throw new HttpError(409, 'Complete prerequisite tasks first.');
-      await db.query("UPDATE ut_tasks SET status='IN_PROGRESS',version=version+1,updated_at=now() WHERE id=$1", [t.id]);
+      await updateAssignment(db, t, req.actor!.id, 'IN_PROGRESS', own.progress);
       await audit(db, req, 'TASK_STARTED', t.id, { status: t.status }, { status: 'IN_PROGRESS' });
     }); res.json({ ok: true });
   }));
@@ -141,8 +152,8 @@ export function taskRoutes(database: pg.Pool) {
     const input = versionSchema.extend({ progressPercent: z.number().int().min(0).max(99) }).strict().parse(req.body);
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version); requireExecutable(t);
-      if (t.assignee_id !== req.actor!.id || t.status !== 'IN_PROGRESS') throw new HttpError(403, 'Only the assignee may update an in-progress task.');
-      await db.query('UPDATE ut_tasks SET progress=$2,version=version+1,updated_at=now() WHERE id=$1', [t.id, input.progressPercent]);
+      if (assignmentOf(t, req.actor!.id)?.status !== 'IN_PROGRESS') throw new HttpError(403, 'Only the assignee may update an in-progress task.');
+      await updateAssignment(db, t, req.actor!.id, 'IN_PROGRESS', input.progressPercent);
       await audit(db, req, 'PROGRESS_UPDATED', t.id, { progress: t.progress }, input);
     }); res.json({ ok: true });
   }));
@@ -159,7 +170,7 @@ export function taskRoutes(database: pg.Pool) {
     const attachmentId = id('attachment');
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!); requireExecutable(t);
-      if (t.assignee_id !== req.actor!.id || t.status !== 'IN_PROGRESS') throw new HttpError(403, 'Only the assignee may upload evidence for an in-progress task.');
+      if (assignmentOf(t, req.actor!.id)?.status !== 'IN_PROGRESS') throw new HttpError(403, 'Only the assignee may upload evidence for an in-progress task.');
       const filename = file.originalname.replace(/[^a-zA-Z0-9_. -]/g, '_').slice(0, 150);
       await db.query('INSERT INTO ut_attachments(id,task_id,owner_id,filename,mime,size,content) VALUES($1,$2,$3,$4,$5,$6,$7)',
         [attachmentId, t.id, req.actor!.id, filename, mime, file.size, file.buffer]);
@@ -174,7 +185,8 @@ export function taskRoutes(database: pg.Pool) {
     if (input.artifactUrl && !/^https?:\/\//.test(input.artifactUrl)) throw new HttpError(400, 'Use an HTTP or HTTPS evidence link.');
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version); requireExecutable(t);
-      if (t.assignee_id !== req.actor!.id || t.status !== 'IN_PROGRESS') throw new HttpError(403, 'Only the assignee may submit an in-progress task.');
+      const own = assignmentOf(t, req.actor!.id);
+      if (own?.status !== 'IN_PROGRESS') throw new HttpError(403, 'Only the assignee may submit an in-progress task.');
       if (t.requires_evidence && (input.note?.trim().length || 0) < 20) throw new HttpError(400, 'Evidence requires a note of at least 20 characters.');
       if ((await db.query(`SELECT 1 FROM ut_dependencies d JOIN ut_tasks t ON t.id=d.depends_on_id
         WHERE d.task_id=$1 AND t.status<>'COMPLETED'`, [t.id])).rowCount) throw new HttpError(409, 'Complete prerequisite tasks first.');
@@ -189,7 +201,7 @@ export function taskRoutes(database: pg.Pool) {
       await db.query(`INSERT INTO ut_evidence(id,task_id,submitted_by,type,note,artifact_url,attachment_id)
         VALUES($1,$2,$3,$4,$5,$6,$7)`, [evidenceId, t.id, req.actor!.id, input.type, input.note || '', input.artifactUrl || null, input.attachmentId || null]);
       const status = t.requires_approval ? 'SUBMITTED_FOR_REVIEW' : 'COMPLETED';
-      await db.query('UPDATE ut_tasks SET status=$2,progress=$3,version=version+1,updated_at=now() WHERE id=$1', [t.id, status, status === 'COMPLETED' ? 100 : Math.max(90, t.progress)]);
+      await updateAssignment(db, t, req.actor!.id, status, status === 'COMPLETED' ? 100 : Math.max(90, own.progress));
       await audit(db, req, 'EVIDENCE_SUBMITTED', t.id, { status: t.status }, { evidenceId, status });
       if (t.requires_approval && t.approver_id) await db.query('INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,$4,$5,$6)',
         [id('notice'), t.approver_id, t.id, 'PROOF_REVIEW_REQUEST', t.plan_code, 'Evidence is awaiting your review.']);
@@ -199,19 +211,22 @@ export function taskRoutes(database: pg.Pool) {
     const input = versionSchema.extend({ evidenceId: z.string().max(128), decision: z.enum(['APPROVED','REJECTED']), remarks: text.min(1) }).strict().parse(req.body);
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version); requireExecutable(t);
-      if (t.assignee_id === req.actor!.id || (req.actor!.role !== 'ADMIN' && t.approver_id && t.approver_id !== req.actor!.id))
+      if (isAssignee(t, req.actor!.id) || (req.actor!.role !== 'ADMIN' && t.approver_id && t.approver_id !== req.actor!.id))
         throw new HttpError(403, 'Self-approval and review by an undesignated reviewer are not allowed.');
       if (t.status !== 'SUBMITTED_FOR_REVIEW') throw new HttpError(409, 'Task is not awaiting review.');
-      const evidence = (await db.query('SELECT * FROM ut_evidence WHERE task_id=$1 ORDER BY created_at DESC LIMIT 1', [t.id])).rows[0];
+      const candidate = (await db.query('SELECT * FROM ut_evidence WHERE task_id=$1 AND id=$2', [t.id, input.evidenceId])).rows[0];
+      const evidence = candidate && (await db.query('SELECT * FROM ut_evidence WHERE task_id=$1 AND submitted_by=$2 ORDER BY created_at DESC LIMIT 1', [t.id, candidate.submitted_by])).rows[0];
       if (!evidence || evidence.id !== input.evidenceId || evidence.submitted_by === req.actor!.id) throw new HttpError(409, 'Review the current submission, not an older or unrelated record.');
+      const submissionOwner = assignmentOf(t, evidence.submitted_by);
+      if (submissionOwner?.status !== 'SUBMITTED_FOR_REVIEW') throw new HttpError(409, 'Task is not awaiting review.');
       if ((await db.query('SELECT id FROM ut_reviews WHERE evidence_id=$1', [evidence.id])).rowCount) throw new HttpError(409, 'This submission has already been reviewed.');
       await db.query('INSERT INTO ut_reviews(id,evidence_id,reviewer_id,decision,remarks) VALUES($1,$2,$3,$4,$5)',
         [id('review'), evidence.id, req.actor!.id, input.decision, input.remarks]);
       const status = input.decision === 'APPROVED' ? 'COMPLETED' : 'IN_PROGRESS';
-      await db.query('UPDATE ut_tasks SET status=$2,progress=$3,version=version+1,updated_at=now() WHERE id=$1', [t.id, status, status === 'COMPLETED' ? 100 : Math.min(t.progress, 89)]);
+      await updateAssignment(db, t, evidence.submitted_by, status, status === 'COMPLETED' ? 100 : Math.min(submissionOwner.progress, 89));
       await audit(db, req, `EVIDENCE_${input.decision}`, t.id, { status: t.status }, { status, evidenceId: evidence.id }, input.remarks);
       await db.query('INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,$4,$5,$6)',
-        [id('notice'), t.assignee_id, t.id, `PROOF_${input.decision}`, t.plan_code, input.remarks]);
+        [id('notice'), evidence.submitted_by, t.id, `PROOF_${input.decision}`, t.plan_code, input.remarks]);
     }); res.json({ ok: true });
   }));
   router.post('/:id/comments', permit('tasks.comment'), wrap(async (req, res) => {

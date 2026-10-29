@@ -10,10 +10,10 @@ export const usersSelect = `SELECT u.*,d.name AS department_name FROM ut_users u
 export async function getDepartments(database: pg.Pool, actor?: Express.Request['actor']) {
   return (await database.query(`SELECT d.*,u.full_name AS coordinator_name,
     (SELECT count(*)::int FROM ut_memberships m WHERE m.department_id=d.id) AS staff_count,
-    (SELECT count(*)::int FROM ut_tasks t WHERE t.department_id=d.id) AS task_count,
-    (SELECT count(*)::int FROM ut_tasks t WHERE t.department_id=d.id AND t.status='COMPLETED') AS completed_count
+    (SELECT count(*)::int FROM ut_tasks t WHERE t.department_id=d.id OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'departmentId'=d.id)) AS task_count,
+    (SELECT count(*)::int FROM ut_tasks t WHERE (t.department_id=d.id OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'departmentId'=d.id)) AND t.status='COMPLETED') AS completed_count
     FROM ut_departments d LEFT JOIN ut_users u ON u.id=d.coordinator_id
-    WHERE ($1::boolean OR d.id IN (SELECT department_id FROM ut_tasks WHERE assignee_id=$2) OR d.id IN (SELECT department_id FROM ut_users WHERE id=$2))
+    WHERE ($1::boolean OR d.id IN (SELECT department_id FROM ut_tasks WHERE assignee_id=$2) OR EXISTS(SELECT 1 FROM ut_tasks t, jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2 AND a->>'departmentId'=d.id) OR d.id IN (SELECT department_id FROM ut_users WHERE id=$2))
     ORDER BY d.name`, [!actor || actor.role !== 'WORKER', actor?.id || ''])).rows.map(d => ({
       id: d.id, code: d.code, name: d.name, active: d.active, coordinatorId: d.coordinator_id,
       headName: d.coordinator_name || '', staffCount: d.staff_count,

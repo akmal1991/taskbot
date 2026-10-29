@@ -11,6 +11,7 @@ import { importRoutes } from './importRoutes';
 import { getTasks, lockedTask } from './records';
 import { readSettings } from './notifications';
 import { verifyTelegramInitData } from './telegramAuth';
+import { isAssignee } from './taskAssignments';
 
 export function createApplication(database: pg.Pool, options: { telegramBotToken?: string } = {}) {
   const app = express();
@@ -49,10 +50,10 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       database.query(`SELECT t.*,u.full_name,u.email,u.data,d.name AS department_name FROM ut_tickets t JOIN ut_users u ON u.id=t.user_id
         JOIN ut_departments d ON d.id=t.department_id WHERE ($1::boolean OR t.user_id=$2) ORDER BY t.created_at DESC`, [actor.permissions.includes('tickets.resolve'), actor.id]),
       database.query(`SELECT DISTINCT p.id,p.title,p.year,p.active FROM ut_work_plans p LEFT JOIN ut_tasks t ON t.work_plan_id=p.id
-        WHERE ($1::boolean OR t.assignee_id=$2) AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
+        WHERE ($1::boolean OR t.assignee_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2)) AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
         ORDER BY p.year DESC`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
       database.query(`SELECT DISTINCT s.* FROM ut_sections s JOIN ut_work_plans p ON p.id=s.work_plan_id
-        LEFT JOIN ut_tasks t ON t.section_id=s.id WHERE ($1::boolean OR t.assignee_id=$2)
+        LEFT JOIN ut_tasks t ON t.section_id=s.id WHERE ($1::boolean OR t.assignee_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2))
         AND ($3::boolean OR p.data->>'draftImportKind' IS DISTINCT FROM 'UNASSIGNED_DRAFT')
         ORDER BY s.number`, [actor.role !== 'WORKER', actor.id, actor.role === 'ADMIN']),
       database.query('SELECT * FROM ut_categories WHERE active=true ORDER BY name'),
@@ -80,8 +81,9 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
     });
   }));
   api.get('/attachments/:id', wrap(async (req, res) => {
-    const row = (await database.query(`SELECT a.*,t.assignee_id,t.draft,t.archived_at FROM ut_attachments a JOIN ut_tasks t ON t.id=a.task_id WHERE a.id=$1`, [req.params.id])).rows[0];
-    if (!row || (!req.actor!.permissions.includes('tasks.readAll') && (row.assignee_id !== req.actor!.id || row.draft || row.archived_at))) throw new HttpError(404, 'Attachment not found.');
+    const row = (await database.query(`SELECT a.*,t.assignee_id,t.data,t.draft,t.archived_at,
+      EXISTS(SELECT 1 FROM ut_evidence e WHERE e.attachment_id=a.id) AS submitted FROM ut_attachments a JOIN ut_tasks t ON t.id=a.task_id WHERE a.id=$1`, [req.params.id])).rows[0];
+    if (!row || (!req.actor!.permissions.includes('tasks.readAll') && (!isAssignee(row, req.actor!.id) || row.draft || row.archived_at || (row.owner_id !== req.actor!.id && !row.submitted)))) throw new HttpError(404, 'Attachment not found.');
     res.setHeader('Content-Type', row.mime);
     res.setHeader('Content-Disposition', `attachment; filename="${row.filename.replace(/["\\\r\n]/g, '_')}"`);
     res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
@@ -146,8 +148,8 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       if (t.archived_at || t.draft) throw new HttpError(409, 'Task is not executable.');
       const review = ['APPROVE_PROOF','REJECT_PROOF'].includes(input.action);
       const permission = review ? 'tasks.review' : input.action === 'CLOCK_IN' ? 'tasks.start' : 'tasks.submit';
-      if (!req.actor!.permissions.includes(permission) || (review ? t.assignee_id === req.actor!.id ||
-        (req.actor!.role !== 'ADMIN' && t.approver_id && t.approver_id !== req.actor!.id) : t.assignee_id !== req.actor!.id))
+      if (!req.actor!.permissions.includes(permission) || (review ? isAssignee(t, req.actor!.id) ||
+        (req.actor!.role !== 'ADMIN' && t.approver_id && t.approver_id !== req.actor!.id) : !isAssignee(t, req.actor!.id)))
         throw new HttpError(403, 'This Telegram action is not permitted for this account and task.');
     });
     res.json({ authorized: true, user: { id: verified.user.id }, authDate: verified.authDate });

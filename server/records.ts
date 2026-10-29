@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { Actor, DB } from './db';
 import { HttpError } from './db';
+import { assignmentsOf, isAssignee } from './taskAssignments';
 
 export const taskSelect = `SELECT t.*,to_char(t.deadline,'YYYY-MM-DD') AS deadline_text,
  a.full_name AS assignee_name,a.telegram_id AS assignee_telegram,a.telegram_username AS assignee_username,
@@ -22,7 +23,7 @@ export const taskDto = (t: any) => ({
 });
 export async function lockedTask(db: DB, taskId: string, actor: Actor, version?: number) {
   const t = (await db.query('SELECT * FROM ut_tasks WHERE id=$1 FOR UPDATE', [taskId])).rows[0];
-  if (!t || (!actor.permissions.includes('tasks.readAll') && (t.assignee_id !== actor.id || t.draft || t.archived_at))) throw new HttpError(404, 'Task not found.');
+  if (!t || (!actor.permissions.includes('tasks.readAll') && (!isAssignee(t, actor.id) || t.draft || t.archived_at))) throw new HttpError(404, 'Task not found.');
   if (version !== undefined && t.version !== version) throw new HttpError(409, 'This task changed on another device. Reload it before saving.');
   return t;
 }
@@ -30,11 +31,24 @@ export const requireExecutable = (task: any) => {
   if (task.archived_at || task.draft) throw new HttpError(409, 'Archived tasks and drafts cannot be executed.');
 };
 export async function getTasks(db: DB, actor: Actor) {
-  const rows = (await db.query(`${taskSelect} WHERE ($1::boolean OR (t.assignee_id=$2 AND t.draft=false AND t.archived_at IS NULL))
+  const rows = (await db.query(`${taskSelect} WHERE ($1::boolean OR ((t.assignee_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.data->'assignments','[]'::jsonb)) a WHERE a->>'userId'=$2)) AND t.draft=false AND t.archived_at IS NULL))
     ORDER BY t.created_at DESC`, [actor.permissions.includes('tasks.readAll'), actor.id])).rows;
   const ids = rows.map(t => t.id);
   const tasks = rows.map(taskDto) as any[];
   if (!ids.length) return tasks;
+  const memberIds = [...new Set(rows.flatMap(t => assignmentsOf(t).map(a => a.userId)))];
+  const members = (await db.query('SELECT u.id,u.full_name,d.id AS department_id,d.name AS department_name FROM ut_users u LEFT JOIN ut_departments d ON d.id=u.department_id WHERE u.id=ANY($1::text[])', [memberIds])).rows;
+  const departmentIds = [...new Set(rows.flatMap(t => assignmentsOf(t).map(a => a.departmentId)))];
+  const teamDepartments = (await db.query('SELECT id,name FROM ut_departments WHERE id=ANY($1::text[])', [departmentIds])).rows;
+  for (const row of rows) {
+    const dto = tasks.find(t => t.id === row.id);
+    dto.assignments = assignmentsOf(row).map(a => ({ ...a, fullName: members.find(u => u.id === a.userId)?.full_name || '', departmentName: teamDepartments.find(d => d.id === a.departmentId)?.name || '' }));
+    dto.departmentIds = dto.assignments.map((a: any) => a.departmentId);
+    dto.overallStatus = row.status; dto.overallProgress = row.progress;
+    if (dto.assignments.length > 1) { dto.assignedToName = dto.assignments.map((a: any) => a.fullName).join(', '); dto.departmentName = [...new Set(dto.assignments.map((a: any) => a.departmentName))].join(', '); }
+    const own = dto.assignments.find((a: any) => a.userId === actor.id);
+    if (own) Object.assign(dto, { assignedToId: actor.id, assignedToName: own.fullName, departmentId: own.departmentId, departmentName: own.departmentName, status: own.status, progressPercent: own.progress, isClockedIn: !['ASSIGNED','PENDING'].includes(own.status), isOverdue: dto.isOverdue && own.status !== 'COMPLETED' });
+  }
   const evidence = (await db.query(`SELECT e.*,u.full_name AS author_name,r.decision,r.remarks,r.created_at AS reviewed_at,
     reviewer.full_name AS reviewer_name,a.filename,a.size FROM ut_evidence e JOIN ut_users u ON u.id=e.submitted_by
     LEFT JOIN ut_reviews r ON r.evidence_id=e.id LEFT JOIN ut_users reviewer ON reviewer.id=r.reviewer_id
