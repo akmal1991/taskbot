@@ -491,12 +491,21 @@ describe('administrative modules and security regressions', () => {
     await database.query("UPDATE ut_users SET telegram_id=NULL WHERE id='other'");
     const previousToken=process.env.TELEGRAM_BOT_TOKEN, previousUrl=process.env.APP_URL;
     process.env.TELEGRAM_BOT_TOKEN=botToken; process.env.APP_URL='https://unitask.example';
-    const calls=[];
-    const transport=async (url,options)=>{calls.push(JSON.parse(options.body));return Response.json({ok:true});};
+    const calls=[],stickers=[];
+    const transport=async (url,options)=>{
+      if(String(url).endsWith('/sendSticker')) {stickers.push(options.body);return Response.json({ok:true});}
+      calls.push(JSON.parse(options.body));return Response.json({ok:true,result:{message_id:123}});
+    };
     try {
       expect(await runNotificationJob(database,'delivery',{},transport)).toBe(1);
       expect(calls).toHaveLength(1); expect(calls[0].chat_id).toBe('1001');
-      expect(calls[0].text).toContain('NOTICE-TEAM'); expect(calls[0].text).toContain('Deadline:');
+      expect(calls[0].text).toContain('NOTICE-TEAM'); expect(calls[0].text).toContain('Bajarish muddati:');
+      expect(calls[0].text).toContain('YUQORI (HIGH)');
+      expect(calls[0].text).toContain('Topshiriq beruvchi: admin');
+      expect(calls[0].text).toContain('Real persisted task description.');
+      expect(stickers).toHaveLength(1); expect(stickers[0].get('chat_id')).toBe('1001');
+      expect(stickers[0].get('sticker').name).toBe('unitask-priority.tgs');
+      expect(JSON.parse(stickers[0].get('reply_parameters')).message_id).toBe(123);
       expect(calls[0].reply_markup.inline_keyboard[0][0].url).toBe('https://unitask.example/#tasks');
       expect(await runNotificationJob(database,'delivery',{},transport)).toBe(0);
       const pending=(await database.query('SELECT * FROM ut_notifications WHERE task_id=$1 AND user_id=\'other\'',[draft.id])).rows[0];
@@ -506,8 +515,12 @@ describe('administrative modules and security regressions', () => {
       expect(await runNotificationJob(database,'delivery',{},rejected)).toBe(1);
       expect((await database.query('SELECT status FROM ut_notifications WHERE id=$1',[pending.id])).rows[0].status).toBe('FAILED');
       await database.query('UPDATE ut_notifications SET next_attempt_at=now() WHERE id=$1',[pending.id]);
-      expect(await runNotificationJob(database,'delivery',{},transport)).toBe(1);
+      const stickerFailure=async(url,options)=>String(url).endsWith('/sendSticker')?Response.json({ok:false},{status:400}):transport(url,options);
+      expect(await runNotificationJob(database,'delivery',{},stickerFailure)).toBe(1);
       expect(calls[1].chat_id).toBe('2002');
+      const delivered=(await database.query('SELECT status,last_error FROM ut_notifications WHERE id=$1',[pending.id])).rows[0];
+      expect(delivered.status).toBe('SENT'); expect(delivered.last_error).toContain('sticker was rejected');
+      expect(await runNotificationJob(database,'delivery',{},transport)).toBe(0);
     } finally {
       if(previousToken===undefined) delete process.env.TELEGRAM_BOT_TOKEN; else process.env.TELEGRAM_BOT_TOKEN=previousToken;
       if(previousUrl===undefined) delete process.env.APP_URL; else process.env.APP_URL=previousUrl;

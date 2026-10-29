@@ -7,6 +7,7 @@ import { permit, wrap, digest } from './security';
 import { lockedTask, requireExecutable, getTasks, validateReferences } from './records';
 import { PRIORITIES } from '../shared/policy';
 import { assignmentsOf, assignmentOf, isAssignee, updateAssignment } from './taskAssignments';
+import { queueAssignmentNotification } from './notifications';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v, 'Invalid date.');
 const text = z.string().trim().max(20000);
@@ -49,8 +50,7 @@ export async function insertTask(db: pg.PoolClient, actorId: string, input: z.in
     input.workPlanId || null, input.sectionId || null, input.categoryId || null, input.deadline, input.priority,
     input.requiresEvidence ?? true, input.requiresApproval ?? true, input.draft ?? false, JSON.stringify(data)]);
   await dependencies(db, taskId, input.dependsOnIds || []);
-  if (!input.draft) for (const member of team) await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'NEW_ASSIGNMENT',$4,$5)`,
-    [id('notice'), member.userId, taskId, input.planCode, `New task assigned: ${input.title}. Deadline: ${input.deadline}`]);
+  if (!input.draft) for (const member of team) await queueAssignmentNotification(db, taskId, member.userId, member.departmentId);
   return taskId;
 }
 export function taskRoutes(database: pg.Pool) {
@@ -110,8 +110,8 @@ export function taskRoutes(database: pg.Pool) {
       if (input.dependsOnIds) await dependencies(db, t.id, input.dependsOnIds);
       if ((t.draft && input.draft === false) || (!t.draft && merged.assignedToId !== t.assignee_id)) {
         const recipients = t.data?.assignments ? assignmentsOf(t).map(member => member.userId) : [merged.assignedToId];
-        for (const userId of recipients) await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'NEW_ASSIGNMENT',$4,$5)`,
-          [id('notice'), userId, t.id, t.plan_code, `New task assigned: ${input.title ?? t.title}. Deadline: ${input.deadline ?? new Date(t.deadline).toISOString().slice(0, 10)}`]);
+        for (const userId of recipients) await queueAssignmentNotification(db, t.id, userId,
+          t.data?.assignments ? assignmentsOf(t).find(member => member.userId === userId)!.departmentId : merged.departmentId);
       }
       await audit(db, req, t.status === 'COMPLETED' ? 'TASK_CORRECTED' : 'TASK_UPDATED', t.id, t, input, input.reason || '');
     });
