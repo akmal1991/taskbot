@@ -2009,7 +2009,7 @@ export const TaskRegister: React.FC = () => {
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
               >
                 <Smartphone className="w-4 h-4" />
-                <span>Telegram Mini Appда Ижро Этиш</span>
+                <span>Ish maydonini ochish</span>
               </button>
 
               <div className="flex items-center gap-2">
