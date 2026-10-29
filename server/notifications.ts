@@ -61,7 +61,7 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
             const reply = await transport(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ chat_id: n.telegram_id, text: `${n.title}\n${n.body}`.slice(0, 4096),
-                ...(taskUrl && n.task_id ? { reply_markup: { inline_keyboard: [[{ text: 'Topshiriqni ochish', url: taskUrl }]] } } : {}) }),
+                ...(taskUrl && n.task_id ? { reply_markup: { inline_keyboard: [[{ text: '🚀 UniTaskni ochish', style: 'primary', web_app: { url: taskUrl } }]] } } : {}) }),
               signal: AbortSignal.timeout(8000),
             });
             const data = await reply.json() as { ok?: boolean; result?: { message_id: number } };

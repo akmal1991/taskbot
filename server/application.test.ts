@@ -506,7 +506,8 @@ describe('administrative modules and security regressions', () => {
       expect(stickers).toHaveLength(1); expect(stickers[0].get('chat_id')).toBe('1001');
       expect(stickers[0].get('sticker').name).toBe('unitask-priority.tgs');
       expect(JSON.parse(stickers[0].get('reply_parameters')).message_id).toBe(123);
-      expect(calls[0].reply_markup.inline_keyboard[0][0].url).toBe('https://unitask.example/#tasks');
+      expect(calls[0].reply_markup.inline_keyboard).toHaveLength(1);
+      expect(calls[0].reply_markup.inline_keyboard[0]).toEqual([{text:'🚀 UniTaskni ochish',style:'primary',web_app:{url:'https://unitask.example/#tasks'}}]);
       expect(await runNotificationJob(database,'delivery',{},transport)).toBe(0);
       const pending=(await database.query('SELECT * FROM ut_notifications WHERE task_id=$1 AND user_id=\'other\'',[draft.id])).rows[0];
       expect(pending.attempts).toBe(0); expect(pending.status).toBe('WAITING');
