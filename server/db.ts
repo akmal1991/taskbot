@@ -24,7 +24,7 @@ export async function transaction<T>(database: pg.Pool, work: (client: pg.PoolCl
   finally { client.release(); }
 }
 export const publicUser = (row: any) => ({
-  id: row.id, username: row.username, email: row.email, fullName: row.full_name,
+  id: row.id, username: row.username, email: row.email || '', fullName: row.full_name,
   role: row.role, roleLabel: row.role, departmentId: row.department_id,
   departmentName: row.department_name, active: row.active,
   phone: row.data?.phone || '', avatarUrl: row.data?.avatarUrl,

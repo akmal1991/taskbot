@@ -9,10 +9,10 @@ export async function queueAssignmentNotification(db: DB, taskId: string, userId
     JOIN ut_departments d ON d.id=$3 LEFT JOIN ut_categories c ON c.id=t.category_id LEFT JOIN ut_work_plans p ON p.id=t.work_plan_id WHERE t.id=$1`, [taskId,userId,departmentId])).rows[0];
   const body = [
     task.plan_workflow ? '📋 ISH REJASI IJROSI BIRIKTIRILDI' : '📋 YANGI TOPSHIRIQ', '',
-    ...(task.plan_workflow ? [`📚 Ish rejasi: ${task.work_plan_title}`,`🚦 Ish rejasi muhimligi: ${priorityLabels[task.plan_workflow.priority]}`] : []),
+    ...(task.plan_workflow ? [`📚 Ish rejasi: ${task.work_plan_title}`] : []),
     `🔢 Reja kodi: ${task.plan_code}`, `📝 Band / bosqich: ${task.title}`,
     ...(!task.plan_workflow ? [`🚦 Muhimlik: ${priorityLabels[task.priority] || task.priority}`] : []),
-    `📅 Bajarish muddati: ${new Date(task.deadline).toISOString().slice(0,10)}`,
+    `📅 Bajarish muddati: ${task.deadline?new Date(task.deadline).toISOString().slice(0,10):task.data?.scheduleKind==='CONTRACT'?'Shartnomaga muvofiq':'Doimiy'}`,
     `${task.plan_workflow?'👤 Rejani tasdiqlagan rektor':'👤 Topshiriq beruvchi'}: ${task.creator_name}`, `🏢 Mas’ul bo‘lim: ${task.department_name}`,
     `👷 Ijrochi: ${task.recipient_name}`, ...(task.category_name ? [`🗂 Kategoriya: ${task.category_name}`] : []),
     ...(task.data?.description ? ['', '📄 Amalga oshirish mexanizmi:', String(task.data.description).slice(0,1800)] : []),
@@ -48,7 +48,7 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
         processed++;
       }
     } else {
-      const rows = (await db.query(`SELECT n.*,u.telegram_id,u.active,COALESCE(p.data->'workflow'->>'priority',t.priority) AS priority FROM ut_notifications n JOIN ut_users u ON u.id=n.user_id
+      const rows = (await db.query(`SELECT n.*,u.telegram_id,u.active,t.priority,p.data ? 'workflow' AS managed_plan FROM ut_notifications n JOIN ut_users u ON u.id=n.user_id
         LEFT JOIN ut_tasks t ON t.id=n.task_id
         LEFT JOIN ut_work_plans p ON p.id=t.work_plan_id
         WHERE n.status IN ('WAITING','FAILED') AND n.attempts<5 AND n.next_attempt_at<=now()
@@ -69,7 +69,7 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
             });
             const data = await reply.json() as { ok?: boolean; result?: { message_id: number } };
             if (!reply.ok || !data.ok) error = 'Telegram rejected the delivery.';
-            else if (n.type === 'NEW_ASSIGNMENT') {
+            else if (n.type === 'NEW_ASSIGNMENT' && !n.managed_plan) {
               // A decoration failure must never resend an already delivered task message.
               try {
                 const sticker = new FormData();

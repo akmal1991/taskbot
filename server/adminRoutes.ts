@@ -23,7 +23,7 @@ export async function getDepartments(database: pg.Pool, actor?: Express.Request[
 const shortText = z.string().trim().min(1).max(200);
 const accountInput = z.object({
   username: z.string().trim().regex(/^[A-Za-z0-9_.-]{3,64}$/),
-  email: z.email().max(254), fullName: shortText, role: z.enum(ROLES),
+  email: z.union([z.email().max(254),z.literal('')]).optional(), fullName: shortText, role: z.enum(ROLES),
   departmentId: z.string().max(128).nullable().optional(), phone: z.string().max(40).optional(),
 });
 const departmentInput = z.object({ code: shortText.max(30), name: shortText, coordinatorId: z.string().max(128).nullable().optional() });
@@ -124,7 +124,7 @@ export function adminRoutes(database: pg.Pool) {
     const result = await transaction(database, async db => {
       if (input.departmentId && !(await db.query('SELECT id FROM ut_departments WHERE id=$1 AND active=true', [input.departmentId])).rowCount) throw new HttpError(400, 'Department unavailable.');
       await db.query(`INSERT INTO ut_users(id,username,email,full_name,role,department_id,data) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-        [userId, input.username, input.email.toLowerCase(), input.fullName, input.role, input.departmentId || null, JSON.stringify({ phone: input.phone })]);
+        [userId, input.username, input.email?.toLowerCase() || null, input.fullName, input.role, input.departmentId || null, JSON.stringify({ phone: input.phone })]);
       await membership(db, userId, input.departmentId);
       await audit(db, req, 'ACCOUNT_CREATED', userId, null, input);
       return issueAccountToken(db, userId, 'ACTIVATE');
@@ -146,7 +146,7 @@ export function adminRoutes(database: pg.Pool) {
       const departmentId = input.departmentId === undefined ? user.department_id : input.departmentId;
       await membership(db, user.id, departmentId);
       await db.query(`UPDATE ut_users SET username=$2,email=$3,full_name=$4,role=$5,department_id=$6,active=$7,data=$8,auth_version=auth_version+1 WHERE id=$1`,
-        [user.id, input.username ?? user.username, input.email?.toLowerCase() ?? user.email, input.fullName ?? user.full_name,
+        [user.id, input.username ?? user.username, input.email===undefined?user.email:input.email.toLowerCase()||null, input.fullName ?? user.full_name,
           role, departmentId || null, active, JSON.stringify({ ...user.data, phone: input.phone ?? user.data.phone ?? '' })]);
       await db.query('DELETE FROM ut_sessions WHERE user_id=$1', [user.id]);
       if (!active) await db.query('UPDATE ut_account_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL', [user.id]);

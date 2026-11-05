@@ -89,7 +89,7 @@ export const TelegramMiniAppModal: React.FC = () => {
             <TaskTeamSummary task={task} />
             <p className="whitespace-pre-wrap text-sm text-slate-300">{task.description}</p>
             {task.acceptanceCriteria && <p className="whitespace-pre-wrap text-sm">{task.acceptanceCriteria}</p>}
-            <p className="text-xs">{t('Deadline')}: {task.deadline} · {task.progressPercent}%</p>
+            <p className="text-xs">{t('Deadline')}: {task.deadline || t(task.scheduleKind==='CONTRACT'?'Contract schedule':'Continuous execution')} · {task.progressPercent}%</p>
             {tab==='tasks' && task.assignedToId===currentUser.id && task.status==='IN_PROGRESS' && <form className="space-y-2 border-t border-slate-600 pt-3" onSubmit={e=>{e.preventDefault();void run(()=>updateTask(task.id,{progressPercent:progress}));}}>
               <label className="block text-sm">{t('Execution progress')}<input required type="number" min={0} max={99} value={progress} onChange={e=>setProgress(Number(e.target.value))} className="mt-1 w-full rounded-lg bg-[#18222d] p-2"/></label>
               <button disabled={busy} className="rounded-lg bg-sky-700 px-3 py-2 text-sm">{t('Save progress')}</button>

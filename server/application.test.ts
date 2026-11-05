@@ -50,6 +50,8 @@ beforeAll(async () => {
   await database.query(await readFile(new URL('../migrations/001_secure_core.sql', import.meta.url), 'utf8'));
   await database.query(await readFile(new URL('../migrations/002_ticket_recipients.sql', import.meta.url), 'utf8'));
   await database.query(await readFile(new URL('../migrations/003_prorektor_role.sql', import.meta.url), 'utf8'));
+  await database.query(await readFile(new URL('../migrations/004_optional_staff_email.sql', import.meta.url), 'utf8'));
+  await database.query(await readFile(new URL('../migrations/005_open_ended_plan_stages.sql', import.meta.url), 'utf8'));
   await database.query("INSERT INTO ut_departments(id,code,name) VALUES('dept','D1','Test department')");
   const hash = await hashPassword(password);
   for (const [id, role] of [['admin','ADMIN'],['director','DIRECTOR'],['worker','WORKER'],['other','WORKER']]) {
@@ -70,6 +72,14 @@ afterAll(async () => {
   }
 });
 describe('server authentication and fixed-role isolation', () => {
+  it('supports staff without invented email addresses while validating supplied addresses',async()=>{
+    for(const username of ['no-email-one','no-email-two']){
+      const created=await request(admin,'/admin/users','POST',{username,fullName:username,role:'WORKER',departmentId:'dept'});
+      expect(created.status).toBe(201);expect(created.body.user.email).toBe('');
+      expect((await database.query('SELECT email FROM ut_users WHERE id=$1',[created.body.user.id])).rows[0].email).toBeNull();
+    }
+    expect((await request(admin,'/admin/users','POST',{username:'invalid-email',email:'not-an-email',fullName:'Invalid email',role:'WORKER'})).status).toBe(400);
+  });
   it('publishes mapped plan stages only after rector approval and completes them through rector evidence review', async () => {
     const source={title:'Official multi-stage plan',year:2027,sourceName:'official.xlsx',sections:[{number:'I',title:'Development'}],items:[{
       number:1,sectionNumber:'I',sectionTitle:'Development',title:'Annual development programme',mechanism:'Prepare the programme, then implement it.',schedule:'2027 I quarter; then September 2027',fundingSource:'University',oversight:'Prorektor',responsible:'Original source staff',distributedUnits:'Original source departments',
@@ -83,7 +93,7 @@ describe('server authentication and fixed-role isolation', () => {
     expect(await getPlan(worker)).toBeUndefined();
     expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:1,priority:'HIGH',rectorId:'director',mappings:[]})).status).toBe(200);
     expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:2})).status).toBe(400);
-    const mappings=[{itemNumber:1,stages:[{title:'Prepare programme',deadline:'2027-03-31',assignees:[{userId:'worker',departmentId:'dept'}]},{title:'Implement programme',deadline:'2027-09-30',assignees:[{userId:'worker',departmentId:'dept'},{userId:'other',departmentId:'dept'}]}]}];
+    const mappings=[{itemNumber:1,stages:[{title:'Prepare programme',deadline:'2027-03-31',assignees:[{userId:'worker',departmentId:'dept'}]},{title:'Implement programme',deadline:'2027-09-30',assignees:[{userId:'worker',departmentId:'dept'},{userId:'other',departmentId:'dept'}]},{title:'Continuous monitoring',deadline:null,scheduleKind:'CONTINUOUS',assignees:[{userId:'other',departmentId:'dept'}]}]}];
     expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:2,priority:'CRITICAL',rectorId:'director',mappings})).status).toBe(200);
     expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:2,priority:'LOW',rectorId:'director',mappings})).status).toBe(409);
     expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:3})).status).toBe(200);
@@ -96,11 +106,15 @@ describe('server authentication and fixed-role isolation', () => {
     expect((await request(director,`/work-plans/${planId}/decision`,'POST',{version:7,decision:'APPROVE',remarks:'Approved for execution.'})).status).toBe(200);
     expect((await request(director,`/work-plans/${planId}/decision`,'POST',{version:7,decision:'APPROVE',remarks:''})).status).toBe(409);
     plan=await getPlan();expect(plan.active).toBe(true);expect(plan.workflow.status).toBe('ACTIVE');
-    expect((await database.query("SELECT id FROM ut_notifications WHERE task_id IN (SELECT id FROM ut_tasks WHERE work_plan_id=$1) AND type='NEW_ASSIGNMENT'",[planId])).rowCount).toBe(3);
+    expect((await database.query("SELECT id FROM ut_notifications WHERE task_id IN (SELECT id FROM ut_tasks WHERE work_plan_id=$1) AND type='NEW_ASSIGNMENT'",[planId])).rowCount).toBe(4);
+    expect((await database.query('SELECT id FROM ut_tasks WHERE work_plan_id=$1 AND deadline IS NULL',[planId])).rowCount).toBe(1);
+    const messages=(await database.query("SELECT body FROM ut_notifications WHERE task_id IN (SELECT id FROM ut_tasks WHERE work_plan_id=$1) AND type='NEW_ASSIGNMENT'",[planId])).rows;
+    expect(messages.every(n=>!n.body.includes('🚦'))).toBe(true);
+    expect(messages.some(n=>n.body.includes('Doimiy'))).toBe(true);
     const assigned=(await request(worker,'/state')).body.tasks.filter(t=>t.workPlanId===planId);expect(assigned).toHaveLength(2);
     expect(assigned[0].priority).toBeUndefined();
     expect(assigned[0].createdById).toBe('director');expect(assigned[0].sourceSchedule).toBe(source.items[0].schedule);
-    const workerPlan=await getPlan(worker);expect(workerPlan.items).toHaveLength(0);expect(workerPlan.workflow.priority).toBe('CRITICAL');
+    const workerPlan=await getPlan(worker);expect(workerPlan.items).toHaveLength(0);expect(workerPlan.workflow.priority).toBeNull();
     expect((await request(admin,`/tasks/${assigned[0].id}`,'PATCH',{version:assigned[0].version,priority:'LOW'})).status).toBe(409);
     for(const stage of plan.workflow.mappings[0].stages) {
       for(const member of stage.assignees) {

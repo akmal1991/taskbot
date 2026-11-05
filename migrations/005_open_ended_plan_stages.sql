@@ -1,0 +1,4 @@
+BEGIN;
+ALTER TABLE ut_tasks ALTER COLUMN deadline DROP NOT NULL;
+INSERT INTO ut_schema_migrations(version) VALUES(5) ON CONFLICT DO NOTHING;
+COMMIT;

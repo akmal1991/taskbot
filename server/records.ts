@@ -15,7 +15,7 @@ export const taskDto = (t: any) => ({
   departmentId: t.department_id, departmentName: t.department_name, assignedToId: t.assignee_id,
   assignedToName: t.assignee_name, assignedToTelegramId: t.assignee_telegram, assignedToTelegramUsername: t.assignee_username,
   createdById: t.creator_id, createdByName: t.creator_name, approverId: t.approver_id || '',
-  approverName: t.approver_name || '', deadline: t.deadline_text, progressPercent: t.progress,
+  approverName: t.approver_name || '', deadline: t.deadline_text || '', progressPercent: t.progress,
   requiresEvidence: t.requires_evidence, requiresApproval: t.requires_approval, draft: t.draft,
   archivedAt: t.archived_at, version: t.version, workPlanId: t.work_plan_id, sectionId: t.section_id,
   sectionTitle: t.section_title, categoryId: t.category_id, createdAt: t.created_at, updatedAt: t.updated_at,

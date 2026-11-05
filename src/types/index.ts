@@ -93,6 +93,7 @@ export interface Task {
   workPlanItemTitle?: string;
   workPlanStage?: number;
   sourceSchedule?: string;
+  scheduleKind?: 'DATE' | 'CONTINUOUS' | 'CONTRACT';
   additionalAssignees?: { userId: string; departmentId: string }[];
   assignments?: { userId: string; departmentId: string; fullName: string; departmentName: string; status: TaskStatus; progress: number }[];
   departmentIds?: string[];

@@ -109,7 +109,7 @@ async function mount(element) {
   return {container,root,unmount:async()=>{await act(async()=>root.unmount());container.remove();}};
 }
 describe('immediate and persistent language changes',()=>{
-  it('places priority only on the work plan and leaves stage deadlines for explicit mapping',async()=>{
+  it('omits all priority controls and leaves stage deadlines for explicit mapping',async()=>{
     const priorFetch=globalThis.fetch;
     const plan={id:'plan-ui',title:'Official plan',year:2027,active:false,legacy:false,items:[{number:1,title:'Programme',sectionNumber:'I',sectionTitle:'Development',mechanism:'Develop the programme',schedule:'2027 I quarter and September',responsible:'Source staff',distributedUnits:'Source departments'}],workflow:{status:'DRAFT',version:1,priority:'HIGH',rectorId:'rector-ui',mappings:[]}};
     globalThis.fetch=async(url)=>{
@@ -121,13 +121,13 @@ describe('immediate and persistent language changes',()=>{
     let page;
     try{
       window.localStorage.setItem('unitask_language','en');page=await mount(<AuthProvider><Gate/></AuthProvider>);
-      expect(page.container.textContent).toContain('Priority applies to the whole work plan.');
+      expect(page.container.textContent.toLowerCase()).not.toContain('priority');
       await act(async()=>[...page.container.querySelectorAll('button')].find(b=>b.textContent==='Assign item and stages').click());
       const dialog=page.container.querySelector('[role="dialog"]');
       expect(dialog.textContent).toContain('2027 I quarter and September');
       expect(dialog.querySelector('input[type="date"]').value).toBe('');
       expect(dialog.textContent.toLowerCase()).not.toContain('priority');
-      expect([...dialog.querySelectorAll('select')].every(select=>select.value==='')).toBe(true);
+      expect([...dialog.querySelectorAll('select')].filter(select=>![...select.options].some(option=>option.value==='DATE')).every(select=>select.value==='')).toBe(true);
     }finally{if(page)await page.unmount();globalThis.fetch=priorFetch;}
   });
   it('shows employee notifications in the header and opens the assigned workspace',async()=>{

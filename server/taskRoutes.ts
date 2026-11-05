@@ -37,19 +37,20 @@ async function dependencies(db: pg.PoolClient, taskId: string, ids: string[]) {
   await db.query('DELETE FROM ut_dependencies WHERE task_id=$1', [taskId]);
   for (const dependency of ids) await db.query('INSERT INTO ut_dependencies(task_id,depends_on_id) VALUES($1,$2)', [taskId, dependency]);
 }
-export async function insertTask(db: pg.PoolClient, actorId: string, input: z.infer<typeof taskInput>, preserveId?: string, managedPublication = false) {
+export async function insertTask(db: pg.PoolClient, actorId: string, input: z.infer<typeof taskInput>, preserveId?: string, managedPublication = false,
+  managedData?: { deadline:string|null; scheduleKind:string; sourceSchedule:string; workPlanItemNumber:number; workPlanItemTitle:string; workPlanStage:number }) {
   await validateReferences(db, input);
   if(input.workPlanId && !managedPublication && (await db.query("SELECT id FROM ut_work_plans WHERE id=$1 AND data ? 'workflow'",[input.workPlanId])).rowCount) throw new HttpError(409, 'Manage this item through its approved work plan.');
   const team = [{ userId: input.assignedToId, departmentId: input.departmentId }, ...(input.additionalAssignees || [])];
   if (new Set(team.map(a => a.userId)).size !== team.length) throw new HttpError(400, 'Each assignee may only be selected once.');
   for (const member of team.slice(1)) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: input.approverId });
   const taskId = preserveId || id('task');
-  const data = { ...(team.length > 1 ? { assignments: team.map(a => ({ ...a, status: 'ASSIGNED', progress: 0 })) } : {}), description: input.description || '', expectedOutcome: input.expectedOutcome, acceptanceCriteria: input.acceptanceCriteria,
+  const data = { ...(managedData?{...managedData,managedWorkPlan:true}:{}), ...(team.length > 1 ? { assignments: team.map(a => ({ ...a, status: 'ASSIGNED', progress: 0 })) } : {}), description: input.description || '', expectedOutcome: input.expectedOutcome, acceptanceCriteria: input.acceptanceCriteria,
     sourceReference: input.sourceReference, fundingSource: input.fundingSource, assignedDate: input.assignedDate || new Date().toISOString().slice(0, 10) };
   await db.query(`INSERT INTO ut_tasks(id,plan_code,title,creator_id,assignee_id,approver_id,department_id,work_plan_id,section_id,category_id,
     deadline,status,priority,requires_evidence,requires_approval,draft,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ASSIGNED',$12,$13,$14,$15,$16)`,
   [taskId, input.planCode, input.title, actorId, input.assignedToId, input.approverId || null, input.departmentId,
-    input.workPlanId || null, input.sectionId || null, input.categoryId || null, input.deadline, input.priority,
+    input.workPlanId || null, input.sectionId || null, input.categoryId || null, managedData?managedData.deadline:input.deadline, input.priority,
     input.requiresEvidence ?? true, input.requiresApproval ?? true, input.draft ?? false, JSON.stringify(data)]);
   await dependencies(db, taskId, input.dependsOnIds || []);
   if (!input.draft) for (const member of team) await queueAssignmentNotification(db, taskId, member.userId, member.departmentId);

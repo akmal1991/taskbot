@@ -6,9 +6,9 @@ import { parseDraftPlanWorkbook, type DraftPlanImport, type DraftPlanItem } from
 import type { Priority } from '../types';
 
 type Member = { userId:string; departmentId:string };
-type Stage = { title:string; deadline:string; assignees:Member[]; taskId?:string };
+type Stage = { title:string; deadline:string|null; scheduleKind?:'DATE'|'CONTINUOUS'|'CONTRACT'; assignees:Member[]; taskId?:string };
 type Mapping = { itemNumber:number; stages:Stage[] };
-type Workflow = { status:string; version:number; priority:Priority|''; rectorId:string; mappings:Mapping[]; remarks?:string; approvedAt?:string; approvedBy?:string };
+type Workflow = { status:string; version:number; priority?:Priority|null|''; rectorId:string; mappings:Mapping[]; remarks?:string; approvedAt?:string; approvedBy?:string };
 type Plan = { id:string; title:string; year:number; sourceName:string; active:boolean; legacy:boolean; items:DraftPlanItem[]; workflow:Workflow };
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
 const buttonClass = 'rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-40 dark:border-slate-600';
@@ -19,7 +19,7 @@ export const WorkPlanBoard: React.FC = () => {
   const manager = permissions.includes('workplans.manage');
   const [plans,setPlans] = useState<Plan[]>([]), [selectedId,setSelectedId] = useState('');
   const [loading,setLoading] = useState(true),[busy,setBusy] = useState(false),[error,setError] = useState(''),[notice,setNotice] = useState('');
-  const [priority,setPriority] = useState<Priority|''>(''),[rectorId,setRectorId] = useState(''),[mappings,setMappings] = useState<Mapping[]>([]);
+  const [rectorId,setRectorId] = useState(''),[mappings,setMappings] = useState<Mapping[]>([]);
   const [search,setSearch] = useState(''),[section,setSection] = useState(''),[page,setPage] = useState(0),[itemNumber,setItemNumber] = useState<number|null>(null);
   const [stages,setStages] = useState<Stage[]>([]),[remarks,setRemarks] = useState(''),[dirty,setDirty] = useState(false);
   const [source,setSource] = useState<DraftPlanImport|null>(null);
@@ -35,7 +35,7 @@ export const WorkPlanBoard: React.FC = () => {
   const plan=visiblePlans.find(p=>p.id===selectedId);
   useEffect(()=>{
     if(!plan || dirty) return;
-    setPriority(plan.workflow.priority);setRectorId(plan.workflow.rectorId||'');setMappings(plan.workflow.mappings||[]);
+    setRectorId(plan.workflow.rectorId||'');setMappings(plan.workflow.mappings||[]);
   },[plan?.id,plan?.workflow?.version,dirty]);
   const run = async (action:()=>Promise<void>) => {
     setBusy(true);setError('');setNotice('');
@@ -90,14 +90,12 @@ export const WorkPlanBoard: React.FC = () => {
         {plan.workflow.remarks&&<p className="whitespace-pre-wrap rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{plan.workflow.remarks}</p>}
         {plan.workflow.approvedAt&&<p className="text-sm text-slate-500">{`${t('Rector approved')}: ${new Date(plan.workflow.approvedAt).toLocaleString(language)}`}</p>}
         {!plan.legacy&&<><div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm">{t('Work-plan priority')}<select disabled={!editable||busy} value={priority} onChange={e=>{setPriority(e.target.value as Priority);setDirty(true);}} className={inputClass}><option value="">{t('Choose priority')}</option>{(['CRITICAL','HIGH','MEDIUM','LOW'] as Priority[]).map(value=><option key={value} value={value}>{t(value)}</option>)}</select></label>
           {manager?<label className="text-sm">{t('Rector for final approval')}<select disabled={!editable||busy} value={rectorId} onChange={e=>{setRectorId(e.target.value);setDirty(true);}} className={inputClass}><option value="">{t('Choose rector')}</option>{users.filter(user=>user.active&&user.role==='DIRECTOR').map(user=><option key={user.id} value={user.id}>{user.fullName}</option>)}</select></label>:<p className="self-center text-sm">{t('Evidence is submitted to the rector for final approval.')}</p>}
         </div>
-        <p className="text-sm text-slate-500">{t('Priority applies to the whole work plan. Items and stages have no separate priority.')}</p>
         </>}
         {editable&&<div className="flex flex-wrap items-center gap-3">
           <span className="text-sm">{`${t('Mapped items')}: ${mappings.length}/${allItems.length}`}</span>
-          <button disabled={busy||!priority} className={`${buttonClass} bg-slate-900 text-white dark:bg-sky-700`} onClick={()=>{void run(async()=>{await api(`/work-plans/${plan.id}/setup`,{method:'PUT',body:JSON.stringify({version:plan.workflow.version,priority,rectorId,mappings})});setDirty(false);setNotice('Work-plan mappings saved.');});}}>{t('Save mappings')}</button>
+          <button disabled={busy} className={`${buttonClass} bg-slate-900 text-white dark:bg-sky-700`} onClick={()=>{void run(async()=>{await api(`/work-plans/${plan.id}/setup`,{method:'PUT',body:JSON.stringify({version:plan.workflow.version,rectorId,mappings})});setDirty(false);setNotice('Work-plan mappings saved.');});}}>{t('Save mappings')}</button>
           <button disabled={busy||dirty||mappings.length!==allItems.length||!rectorId} className={`${buttonClass} bg-sky-700 text-white`} onClick={()=>{void run(async()=>{await api(`/work-plans/${plan.id}/submit`,{method:'POST',body:JSON.stringify({version:plan.workflow.version})});setNotice('Work plan sent to rector.');});}}>{t('Send plan to rector')}</button>
           {dirty&&<span className="text-sm text-amber-700">{t('Unsaved changes')}</span>}
         </div>}
@@ -121,14 +119,14 @@ export const WorkPlanBoard: React.FC = () => {
             <details className="text-sm"><summary className="cursor-pointer text-sky-700 dark:text-sky-400">{t('Original plan details')}</summary><div className="mt-3 space-y-3 whitespace-pre-wrap break-words">
               <p>{item.mechanism}</p><p>{`${t('Source schedule')}: ${item.schedule}`}</p><p>{`${t('Source responsible staff')}: ${item.responsible||'—'}`}</p><p>{`${t('Source departments')}: ${item.distributedUnits||'—'}`}</p><p>{`${t('Source oversight')}: ${item.oversight||'—'}`}</p>
             </div></details>
-            {mapping&&<div className="space-y-2 text-sm">{mapping.stages.map((stage,index)=><div key={index} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><p className="font-medium">{`${index+1}. ${stage.title}`}</p><p className="mt-1 text-slate-500">{`${stage.deadline} · ${stage.assignees.map(member=>`${users.find(u=>u.id===member.userId)?.fullName||member.userId} (${departments.find(d=>d.id===member.departmentId)?.name||member.departmentId})`).join(', ')}`}</p></div>)}</div>}
+            {mapping&&<div className="space-y-2 text-sm">{mapping.stages.map((stage,index)=><div key={index} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800"><p className="font-medium">{`${index+1}. ${stage.title}`}</p><p className="mt-1 text-slate-500">{`${stage.deadline||t(stage.scheduleKind==='CONTRACT'?'Contract schedule':'Continuous execution')} · ${stage.assignees.map(member=>`${users.find(u=>u.id===member.userId)?.fullName||member.userId} (${departments.find(d=>d.id===member.departmentId)?.name||member.departmentId})`).join(', ')}`}</p></div>)}</div>}
             {editable&&<button disabled={busy} className={buttonClass} onClick={()=>openMapping(item)}>{t(mapping?'Edit item assignment':'Assign item and stages')}</button>}
             {rows.map(task=><button key={task.id} className="mr-2 rounded-lg bg-sky-700 px-3 py-2 text-sm text-white" onClick={()=>openTma(task.id)}>{`${t('Open stage')}: ${task.title} · ${t(task.overallStatus||task.status)}`}</button>)}
           </article>;
         })}</div>
         <div className="flex items-center justify-between"><button disabled={!page} className={buttonClass} onClick={()=>setPage(p=>p-1)}>{t('Previous')}</button><span className="text-sm">{`${page+1}/${Math.max(1,Math.ceil(filtered.length/15))}`}</span><button disabled={(page+1)*15>=filtered.length} className={buttonClass} onClick={()=>setPage(p=>p+1)}>{t('Next')}</button></div>
       </>}
-      {(!manager||plan.legacy)&&<div className="space-y-3">{planTasks.map(task=><article key={task.id} className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900"><p className="text-xs text-slate-500">{`${t('Plan item')}: ${task.workPlanItemNumber||task.planCode}`}</p><h3 className="mt-2 font-bold">{task.workPlanItemTitle||task.title}</h3><p className="mt-2 text-sm">{task.title}</p><p className="mt-2 text-sm text-slate-500">{`${task.deadline} · ${t(task.status)} · ${task.progressPercent}%`}</p><button className="mt-4 rounded-lg bg-sky-700 px-4 py-3 text-sm font-bold text-white" onClick={()=>openTma(task.id)}>{t('Ish maydonini ochish')}</button></article>)}</div>}
+      {(!manager||plan.legacy)&&<div className="space-y-3">{planTasks.map(task=><article key={task.id} className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900"><p className="text-xs text-slate-500">{`${t('Plan item')}: ${task.workPlanItemNumber||task.planCode}`}</p><h3 className="mt-2 font-bold">{task.workPlanItemTitle||task.title}</h3><p className="mt-2 text-sm">{task.title}</p><p className="mt-2 text-sm text-slate-500">{`${task.deadline||t(task.scheduleKind==='CONTRACT'?'Contract schedule':'Continuous execution')} · ${t(task.status)} · ${task.progressPercent}%`}</p><button className="mt-4 rounded-lg bg-sky-700 px-4 py-3 text-sm font-bold text-white" onClick={()=>openTma(task.id)}>{t('Ish maydonini ochish')}</button></article>)}</div>}
     </>}
     {currentItem&&editable&&<div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-2 sm:p-6">
       <form role="dialog" aria-modal="true" aria-labelledby="mapping-title" className="max-h-[94dvh] w-full max-w-3xl space-y-4 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-900 sm:p-6" onSubmit={e=>{
@@ -138,7 +136,8 @@ export const WorkPlanBoard: React.FC = () => {
         <p className="text-sm text-slate-500">{t('Enter each stage and confirm its exact deadline. Source dates are never guessed.')}</p>
         {stages.map((stage,index)=><fieldset key={index} className="space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700"><legend className="px-2 font-semibold">{`${t('Stage')} ${index+1}`}</legend>
           <label className="block text-sm">{t('Stage title')}<input required maxLength={500} className={inputClass} value={stage.title} onChange={e=>updateStage(index,{title:e.target.value})}/></label>
-          <label className="block text-sm">{t('Confirmed deadline')}<input required type="date" className={inputClass} value={stage.deadline} onChange={e=>updateStage(index,{deadline:e.target.value})}/></label>
+          <label className="block text-sm">{t('Schedule type')}<select className={inputClass} value={stage.scheduleKind||'DATE'} onChange={e=>updateStage(index,{scheduleKind:e.target.value as Stage['scheduleKind'],deadline:e.target.value==='DATE'?'':null})}>{['DATE','CONTINUOUS','CONTRACT'].map(kind=><option key={kind} value={kind}>{t(kind)}</option>)}</select></label>
+          {(!stage.scheduleKind||stage.scheduleKind==='DATE')&&<label className="block text-sm">{t('Confirmed deadline')}<input required type="date" className={inputClass} value={stage.deadline||''} onChange={e=>updateStage(index,{deadline:e.target.value})}/></label>}
           {stage.assignees.map((member,memberIndex)=><div key={memberIndex} className="grid gap-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800 sm:grid-cols-[1fr_1fr_auto]">
             <label className="text-sm">{t('Department')}<select required className={inputClass} value={member.departmentId} onChange={e=>updateStage(index,{assignees:stage.assignees.map((m,i)=>i===memberIndex?{userId:'',departmentId:e.target.value}:m)})}><option value="">{t('Choose department')}</option>{departments.filter(d=>d.active).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
             <label className="text-sm">{t('Assignee')}<select required className={inputClass} value={member.userId} onChange={e=>updateStage(index,{assignees:stage.assignees.map((m,i)=>i===memberIndex?{...m,userId:e.target.value}:m)})}><option value="">{t('Choose employee')}</option>{users.filter(u=>u.active&&u.id!==rectorId&&u.departmentId===member.departmentId&&!stage.assignees.some((m,i)=>i!==memberIndex&&m.userId===u.id)).map(u=><option key={u.id} value={u.id}>{u.fullName}</option>)}</select></label>

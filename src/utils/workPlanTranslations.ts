@@ -1,6 +1,12 @@
 const entries: Record<string,[string,string]> = {
   ',':[',',','], 'Previous':['Oldingi','Назад'], 'Next':['Keyingi','Далее'],
   'Save progress':['Ijro foizini saqlash','Сохранить прогресс'],
+  'Schedule type':['Muddat turi','Тип срока'],
+  'DATE':['Aniq sana','Точная дата'],
+  'CONTINUOUS':['Doimiy','Постоянно'],
+  'CONTRACT':['Shartnomaga muvofiq','По договору'],
+  'Continuous execution':['Doimiy ijro','Постоянное исполнение'],
+  'Contract schedule':['Shartnomaga muvofiq','По договору'],
   'ALL':['Barchasi','Все'],
   'Choose priority':['Muhimlik darajasini tanlang','Выберите приоритет'],
   'Choose the work-plan priority.':['Ish rejasining muhimlik darajasini tanlang.','Выберите приоритет плана работ.'],

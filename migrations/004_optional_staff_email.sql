@@ -1,0 +1,4 @@
+BEGIN;
+ALTER TABLE ut_users ALTER COLUMN email DROP NOT NULL;
+INSERT INTO ut_schema_migrations(version) VALUES(4) ON CONFLICT DO NOTHING;
+COMMIT;

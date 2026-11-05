@@ -10,12 +10,13 @@ import { PRIORITIES } from '../shared/policy';
 
 const stageInput = z.object({
   title: z.string().trim().min(1).max(500),
-  deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value),
+  deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value).nullable(),
+  scheduleKind: z.enum(['DATE','CONTINUOUS','CONTRACT']).default('DATE'),
   assignees: z.array(z.object({ userId: z.string().min(1).max(128), departmentId: z.string().min(1).max(128) }).strict()).min(1).max(50),
-}).strict();
+}).strict().refine(stage=>stage.deadline!==null||stage.scheduleKind!=='DATE','Use an explicit date or an open-ended schedule.');
 const mappingInput = z.object({ itemNumber: z.number().int().positive(), stages: z.array(stageInput).min(1).max(30) }).strict();
 const versionInput = z.object({ version: z.number().int().positive() }).strict();
-const flowOf = (p: any) => p.data.workflow || { status: 'DRAFT', version: 1, mappings: [], priority: '', rectorId: '' };
+const flowOf = (p: any) => p.data.workflow || { status: 'DRAFT', version: 1, mappings: [], priority: null, rectorId: '' };
 async function locked(db: DB, planId: string, version: number) {
   const p = (await db.query('SELECT * FROM ut_work_plans WHERE id=$1 FOR UPDATE', [planId])).rows[0];
   if (!p || !Array.isArray(p.data?.items)) throw new HttpError(404, 'Source work plan was not found.');
@@ -27,7 +28,6 @@ async function save(db: DB, p: any, workflow: any, active = false) {
     ...(active ? { draftImportKind: 'ASSIGNED_WORK_PLAN' } : {}), workflow: { ...workflow, version: flowOf(p).version+1 } })]);
 }
 async function validateSetup(db: DB, p: any, flow: any) {
-  if(!PRIORITIES.includes(flow.priority)) throw new HttpError(400, 'Choose the work-plan priority.');
   const rector = (await db.query("SELECT id FROM ut_users WHERE id=$1 AND active=true AND role='DIRECTOR'", [flow.rectorId])).rows[0];
   if (!rector) throw new HttpError(400, 'Choose an active rector for final approval.');
   const itemNumbers = p.data.items.map((item: any) => item.number);
@@ -65,7 +65,7 @@ export function workPlanRoutes(database: pg.Pool) {
         throw new HttpError(409, 'A work plan with this title and year or source file is already imported.');
       await db.query('INSERT INTO ut_work_plans(id,title,year,active,data) VALUES($1,$2,$3,false,$4)',[planId,source.title,source.year,JSON.stringify({
         sourceName:source.sourceName,draftImportDigest:sourceDigest,draftImportKind:'UNASSIGNED_DRAFT',items:source.items,sections:source.sections,itemCount:source.items.length,
-        workflow:{status:'DRAFT',version:1,mappings:[],rectorId:'',priority:''},
+        workflow:{status:'DRAFT',version:1,mappings:[],rectorId:'',priority:null},
       })]);
       for (const section of source.sections) await db.query('INSERT INTO ut_sections(id,work_plan_id,number,title) VALUES($1,$2,$3,$4)',[id('section'),planId,section.number,section.title]);
       await audit(db,req,'WORK_PLAN_DRAFT_IMPORTED',planId,null,{sourceName:source.sourceName,itemCount:source.items.length});
@@ -73,14 +73,14 @@ export function workPlanRoutes(database: pg.Pool) {
     res.status(201).json({id:planId});
   }));
   router.put('/:id/setup', permit('workplans.manage'), wrap(async (req,res) => {
-    const input = z.object({version:z.number().int().positive(),priority:z.enum(PRIORITIES),rectorId:z.string().max(128),mappings:z.array(mappingInput).max(2000)}).strict().parse(req.body);
+    const input = z.object({version:z.number().int().positive(),priority:z.enum(PRIORITIES).nullable().optional(),rectorId:z.string().max(128),mappings:z.array(mappingInput).max(2000)}).strict().parse(req.body);
     await transaction(database,async db => {
       const p = await locked(db,String(req.params.id),input.version), flow = flowOf(p);
       if (!['DRAFT','RETURNED'].includes(flow.status) || p.active) throw new HttpError(409, 'Only draft or returned work plans can be edited.');
       const numbers=p.data.items.map((i:any)=>i.number);
       if (new Set(input.mappings.map(m=>m.itemNumber)).size!==input.mappings.length || input.mappings.some(m=>!numbers.includes(m.itemNumber))) throw new HttpError(400,'Invalid work-plan item mapping.');
-      await save(db,p,{...flow,priority:input.priority,rectorId:input.rectorId,mappings:input.mappings,status:'DRAFT'});
-      await audit(db,req,'WORK_PLAN_MAPPING_SAVED',p.id,null,{mappedItems:input.mappings.length,priority:input.priority,rectorId:input.rectorId});
+      await save(db,p,{...flow,priority:null,rectorId:input.rectorId,mappings:input.mappings,status:'DRAFT'});
+      await audit(db,req,'WORK_PLAN_MAPPING_SAVED',p.id,null,{mappedItems:input.mappings.length,rectorId:input.rectorId});
     }); res.json({ok:true});
   }));
   router.post('/:id/submit', permit('workplans.manage'), wrap(async (req,res) => {
@@ -116,11 +116,10 @@ export function workPlanRoutes(database: pg.Pool) {
               planCode:`WP-${p.id.slice(-12)}-${item.number}-${index+1}`,title:stage.title,description:item.mechanism,
               assignedToId:first.userId,departmentId:first.departmentId,additionalAssignees:additional,
               approverId:flow.rectorId,workPlanId:p.id,sectionId:sections.find(s=>s.number===item.sectionNumber)?.id,
-              priority:'MEDIUM',deadline:stage.deadline,requiresEvidence:true,requiresApproval:true,draft:false,
+              priority:'MEDIUM',deadline:stage.deadline||'',requiresEvidence:true,requiresApproval:true,draft:false,
               fundingSource:item.fundingSource,sourceReference:`${p.title} / ${item.number}`,
-            },undefined,true);
+            },undefined,true,{deadline:stage.deadline,scheduleKind:stage.scheduleKind,sourceSchedule:item.schedule,workPlanItemNumber:item.number,workPlanItemTitle:item.title,workPlanStage:index+1});
             stage.taskId=taskId;
-            await db.query("UPDATE ut_tasks SET data=data || $2::jsonb WHERE id=$1",[taskId,JSON.stringify({managedWorkPlan:true,workPlanItemNumber:item.number,workPlanItemTitle:item.title,workPlanStage:index+1,sourceSchedule:item.schedule})]);
           }
         }
         await save(db,p,{...flow,status:'ACTIVE',approvedBy:req.actor!.id,approvedAt:new Date().toISOString(),remarks:input.remarks},true);
