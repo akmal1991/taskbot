@@ -8,6 +8,7 @@ import { lockedTask, requireExecutable, getTasks, validateReferences } from './r
 import { PRIORITIES } from '../shared/policy';
 import { assignmentsOf, assignmentOf, isAssignee, updateAssignment } from './taskAssignments';
 import { queueAssignmentNotification } from './notifications';
+import { evidenceMime } from './evidenceMime';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v, 'Invalid date.');
 const text = z.string().trim().max(20000);
@@ -36,8 +37,9 @@ async function dependencies(db: pg.PoolClient, taskId: string, ids: string[]) {
   await db.query('DELETE FROM ut_dependencies WHERE task_id=$1', [taskId]);
   for (const dependency of ids) await db.query('INSERT INTO ut_dependencies(task_id,depends_on_id) VALUES($1,$2)', [taskId, dependency]);
 }
-export async function insertTask(db: pg.PoolClient, actorId: string, input: z.infer<typeof taskInput>, preserveId?: string) {
+export async function insertTask(db: pg.PoolClient, actorId: string, input: z.infer<typeof taskInput>, preserveId?: string, managedPublication = false) {
   await validateReferences(db, input);
+  if(input.workPlanId && !managedPublication && (await db.query("SELECT id FROM ut_work_plans WHERE id=$1 AND data ? 'workflow'",[input.workPlanId])).rowCount) throw new HttpError(409, 'Manage this item through its approved work plan.');
   const team = [{ userId: input.assignedToId, departmentId: input.departmentId }, ...(input.additionalAssignees || [])];
   if (new Set(team.map(a => a.userId)).size !== team.length) throw new HttpError(400, 'Each assignee may only be selected once.');
   for (const member of team.slice(1)) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: input.approverId });
@@ -79,6 +81,7 @@ export function taskRoutes(database: pg.Pool) {
       // Serialize dependency changes to protect cross-task cycle checks.
       await db.query('SELECT pg_advisory_xact_lock(741201)');
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version);
+      if (t.data?.managedWorkPlan) throw new HttpError(409, 'Manage this item through its approved work plan.');
       if (input.additionalAssignees !== undefined) throw new HttpError(409, 'Team assignments are fixed after task creation.');
       if (t.data?.assignments && (input.assignedToId !== undefined || input.departmentId !== undefined || input.approverId !== undefined)) {
         if ((input.assignedToId !== undefined && input.assignedToId !== t.assignee_id) || (input.departmentId !== undefined && input.departmentId !== t.department_id)) throw new HttpError(409, 'Team assignments are fixed after task creation.');
@@ -95,6 +98,7 @@ export function taskRoutes(database: pg.Pool) {
         categoryId: input.categoryId === undefined ? t.category_id : input.categoryId,
       };
       await validateReferences(db, merged);
+      if(merged.workPlanId && (await db.query("SELECT id FROM ut_work_plans WHERE id=$1 AND data ? 'workflow'",[merged.workPlanId])).rowCount) throw new HttpError(409, 'Manage this item through its approved work plan.');
       if (t.status === 'SUBMITTED_FOR_REVIEW' && (merged.assignedToId !== t.assignee_id || merged.approverId !== t.approver_id))
         throw new HttpError(409, 'Review the current submission before reassigning this task.');
       const payload = { ...t.data };
@@ -121,6 +125,7 @@ export function taskRoutes(database: pg.Pool) {
     const input = versionSchema.extend({ reason: text.min(1) }).strict().parse(req.body);
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version);
+      if(t.data?.managedWorkPlan) throw new HttpError(409, 'Manage this item through its approved work plan.');
       await db.query(`UPDATE ut_tasks SET archived_at=${action === 'archive' ? 'now()' : 'NULL'},version=version+1,updated_at=now() WHERE id=$1`, [t.id]);
       await audit(db, req, action === 'archive' ? 'TASK_ARCHIVED' : 'TASK_RESTORED', t.id, t, null, input.reason);
     }); res.json({ ok: true });
@@ -163,12 +168,8 @@ export function taskRoutes(database: pg.Pool) {
   router.post('/:id/attachments', permit('tasks.submit'), upload.single('file'), wrap(async (req, res) => {
     if (!req.file) throw new HttpError(400, 'Choose a file.');
     const file = req.file;
-    const magic = file.buffer.subarray(0, 8);
-    const png = magic.equals(Buffer.from([137,80,78,71,13,10,26,10]));
-    const jpg = magic[0] === 255 && magic[1] === 216 && magic[2] === 255;
-    const pdf = file.buffer.subarray(0,5).toString() === '%PDF-';
-    const mime = png ? 'image/png' : jpg ? 'image/jpeg' : pdf ? 'application/pdf' : null;
-    if (!mime || mime !== file.mimetype) throw new HttpError(400, 'Only verified PDF, PNG, and JPEG files are accepted.');
+    const mime = file.buffer.length>=8 ? evidenceMime(file.buffer) : null;
+    if (!mime || ![mime,'application/octet-stream'].includes(file.mimetype)) throw new HttpError(400, 'Upload a valid PDF, DOCX, XLSX, PNG or JPEG file.');
     const attachmentId = id('attachment');
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!); requireExecutable(t);
@@ -213,6 +214,7 @@ export function taskRoutes(database: pg.Pool) {
     const input = versionSchema.extend({ evidenceId: z.string().max(128), decision: z.enum(['APPROVED','REJECTED']), remarks: text.min(1) }).strict().parse(req.body);
     await transaction(database, async db => {
       const t = await lockedTask(db, String(req.params.id), req.actor!, input.version); requireExecutable(t);
+      if (t.data?.managedWorkPlan && (req.actor!.role !== 'DIRECTOR' || req.actor!.id !== t.approver_id)) throw new HttpError(403, 'Only the selected rector may review this work-plan evidence.');
       if (isAssignee(t, req.actor!.id) || (!['ADMIN', 'PROREKTOR'].includes(req.actor!.role) && t.approver_id && t.approver_id !== req.actor!.id))
         throw new HttpError(403, 'Self-approval and review by an undesignated reviewer are not allowed.');
       if (t.status !== 'SUBMITTED_FOR_REVIEW') throw new HttpError(409, 'Task is not awaiting review.');

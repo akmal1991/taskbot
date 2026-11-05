@@ -9,7 +9,9 @@ export const taskSelect = `SELECT t.*,to_char(t.deadline,'YYYY-MM-DD') AS deadli
  FROM ut_tasks t JOIN ut_users a ON a.id=t.assignee_id JOIN ut_users c ON c.id=t.creator_id
  JOIN ut_departments d ON d.id=t.department_id LEFT JOIN ut_users r ON r.id=t.approver_id LEFT JOIN ut_sections s ON s.id=t.section_id`;
 export const taskDto = (t: any) => ({
-  ...t.data, id: t.id, planCode: t.plan_code, title: t.title, status: t.status, priority: t.priority,
+  ...t.data, id: t.id, planCode: t.plan_code, title: t.title, status: t.status,
+  // Managed plan items inherit their plan's priority; no item-level priority is exposed.
+  priority: t.data?.managedWorkPlan ? undefined : t.priority,
   departmentId: t.department_id, departmentName: t.department_name, assignedToId: t.assignee_id,
   assignedToName: t.assignee_name, assignedToTelegramId: t.assignee_telegram, assignedToTelegramUsername: t.assignee_username,
   createdById: t.creator_id, createdByName: t.creator_name, approverId: t.approver_id || '',

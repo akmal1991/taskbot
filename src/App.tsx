@@ -7,15 +7,13 @@ import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoaderCircle } from 'lucide-react';
 import { canAccessView } from './utils/permissions';
-const Dashboard = lazy(()=>import('./components/Dashboard').then(m=>({default:m.Dashboard})));
-const TaskRegister = lazy(()=>import('./components/TaskRegister').then(m=>({default:m.TaskRegister})));
 const ProofVerificationConsole = lazy(()=>import('./components/ProofVerificationConsole').then(m=>({default:m.ProofVerificationConsole})));
-const ExcelManager = lazy(()=>import('./components/ExcelManager').then(m=>({default:m.ExcelManager})));
 const AdminPanel = lazy(()=>import('./components/AdminPanel').then(m=>({default:m.AdminPanel})));
 const AccountPanel = lazy(()=>import('./components/AccountPanel').then(m=>({default:m.AccountPanel})));
 const SchedulerQueueConsole = lazy(()=>import('./components/SchedulerQueueConsole').then(m=>({default:m.SchedulerQueueConsole})));
 const AuditLogView = lazy(()=>import('./components/AuditLogView').then(m=>({default:m.AuditLogView})));
 const ServiceDeskView = lazy(()=>import('./components/ServiceDeskView').then(m=>({default:m.ServiceDeskView})));
+const WorkPlanBoard = lazy(()=>import('./components/WorkPlanBoard').then(m=>({default:m.WorkPlanBoard})));
 const TelegramMiniAppModal = lazy(()=>import('./components/TelegramMiniAppModal').then(m=>({default:m.TelegramMiniAppModal})));
 
 const MainLayout: React.FC = () => {
@@ -50,10 +48,10 @@ const MainLayout: React.FC = () => {
         <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 overflow-y-auto">
           <div className="mb-4 md:hidden"><TaskWorkspaceCard /></div>
           {loading ? <div role="status" className="flex justify-center py-24"><LoaderCircle className="animate-spin" aria-label="Loading" /></div> : <Suspense fallback={<div role="status" className="flex justify-center py-24"><LoaderCircle className="animate-spin" aria-label="Loading" /></div>}>
-          {visibleView === 'dashboard' && <Dashboard setActiveView={setActiveView} />}
-          {visibleView === 'tasks' && <TaskRegister />}
+          {visibleView === 'dashboard' && <WorkPlanBoard />}
+          {visibleView === 'tasks' && <WorkPlanBoard />}
           {visibleView === 'proofs' && <ProofVerificationConsole />}
-          {visibleView === 'excel' && <ExcelManager />}
+          {visibleView === 'excel' && <WorkPlanBoard />}
           {['users', 'admin'].includes(visibleView) && <AdminPanel />}
           {visibleView === 'scheduler' && <SchedulerQueueConsole />}
           {visibleView === 'audit' && <AuditLogView />}

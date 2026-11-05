@@ -35,9 +35,9 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
   }, []);
   const navigationItems = [
     { id: 'dashboard', label: 'Boshqaruv Paneli' },
-    { id: 'tasks', label: 'Ish Reja Vazifalari' },
-    { id: 'proofs', label: 'Proof-of-Work Tekshiruvi' },
-    { id: 'excel', label: 'Excel Ingestion & Reja' },
+    { id: 'tasks', label: 'Work plans and execution' },
+    { id: 'proofs', label: 'Review submitted evidence' },
+    { id: 'excel', label: 'Import official work plan' },
     { id: 'admin', label: 'Administration' },
     { id: 'scheduler', label: 'Notification jobs' },
     { id: 'audit', label: 'Audit Jurnali' },
@@ -160,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({ activeView, setActiveView }) => 
               <p className="font-semibold">{notice.title}</p><p className="mt-1 break-words">{notice.messageText}</p>
               <time className="mt-1 block text-xs text-slate-500">{new Date(notice.sentAt).toLocaleString(language)}</time>
               <div className="mt-2 flex flex-wrap gap-3">
-                {notice.taskId && <button className="font-semibold text-sky-700 dark:text-sky-400" onClick={() => { if (!notice.isRead) void markNotificationAsRead(notice.id).catch(() => {}); setNoticesOpen(false); openTma(notice.taskId); }}>Ish maydonini ochish</button>}
+                {(notice.taskId || notice.type.startsWith('WORK_PLAN_')) && <button className="font-semibold text-sky-700 dark:text-sky-400" onClick={() => { if (!notice.isRead) void markNotificationAsRead(notice.id).catch(() => {}); setNoticesOpen(false); if(notice.taskId)openTma(notice.taskId);else setActiveView('tasks'); }}>Ish maydonini ochish</button>}
                 {!notice.isRead && <button className="text-sky-700 underline dark:text-sky-400" onClick={() => { void markNotificationAsRead(notice.id).catch(() => {}); }}>Mark as read</button>}
               </div>
             </li>)}</ul>

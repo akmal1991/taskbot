@@ -8,6 +8,7 @@ import { LoginPage } from '../components/LoginPage';
 import { AdminPanel } from '../components/AdminPanel';
 import { TaskRegister } from '../components/TaskRegister';
 import { Header } from '../components/Header';
+import { WorkPlanBoard } from '../components/WorkPlanBoard';
 import { localizeText } from '../utils/i18n';
 const window = new Window({ url:'https://unitask.example/' });
 const previous = new Map(), realFetch = globalThis.fetch;
@@ -108,6 +109,27 @@ async function mount(element) {
   return {container,root,unmount:async()=>{await act(async()=>root.unmount());container.remove();}};
 }
 describe('immediate and persistent language changes',()=>{
+  it('places priority only on the work plan and leaves stage deadlines for explicit mapping',async()=>{
+    const priorFetch=globalThis.fetch;
+    const plan={id:'plan-ui',title:'Official plan',year:2027,active:false,legacy:false,items:[{number:1,title:'Programme',sectionNumber:'I',sectionTitle:'Development',mechanism:'Develop the programme',schedule:'2027 I quarter and September',responsible:'Source staff',distributedUnits:'Source departments'}],workflow:{status:'DRAFT',version:1,priority:'HIGH',rectorId:'rector-ui',mappings:[]}};
+    globalThis.fetch=async(url)=>{
+      if(String(url).endsWith('/auth/me'))return Response.json({user:{id:'admin-ui',fullName:'Admin',role:'ADMIN'},permissions:['workplans.manage','tasks.readAll'],csrfToken:'test'});
+      if(String(url).endsWith('/work-plans'))return Response.json([plan]);
+      return Response.json({...emptyState,users:[{id:'rector-ui',role:'DIRECTOR',fullName:'Rector',active:true}],departments:[{id:'dept',name:'Department',active:true}]});
+    };
+    const {useAuth}=await import('./AuthContext');const Gate=()=>useAuth().user?<AppProvider><WorkPlanBoard/></AppProvider>:null;
+    let page;
+    try{
+      window.localStorage.setItem('unitask_language','en');page=await mount(<AuthProvider><Gate/></AuthProvider>);
+      expect(page.container.textContent).toContain('Priority applies to the whole work plan.');
+      await act(async()=>[...page.container.querySelectorAll('button')].find(b=>b.textContent==='Assign item and stages').click());
+      const dialog=page.container.querySelector('[role="dialog"]');
+      expect(dialog.textContent).toContain('2027 I quarter and September');
+      expect(dialog.querySelector('input[type="date"]').value).toBe('');
+      expect(dialog.textContent.toLowerCase()).not.toContain('priority');
+      expect([...dialog.querySelectorAll('select')].every(select=>select.value==='')).toBe(true);
+    }finally{if(page)await page.unmount();globalThis.fetch=priorFetch;}
+  });
   it('shows employee notifications in the header and opens the assigned workspace',async()=>{
     const priorFetch=globalThis.fetch;
     const notice={id:'notice-test',taskId:'task-test',title:'IT-01',messageText:'New task assigned',sentAt:new Date().toISOString(),isRead:false};

@@ -56,7 +56,7 @@ beforeAll(async () => {
     await database.query('INSERT INTO ut_users(id,username,email,full_name,role,department_id,password_hash,active) VALUES($1,$1,$2,$1,$3,$4,$5,true)', [id, `${id}@example.test`, role, 'dept', hash]);
     await database.query("INSERT INTO ut_memberships(user_id,department_id) VALUES($1,'dept')", [id]);
   }
-  server = createApplication(database, { telegramBotToken: botToken }).listen(0, '127.0.0.1');
+  server = createApplication(database, { telegramBotToken: botToken, apiRequestLimit: 2000 }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}`;
   admin = await login('admin'); director = await login('director@example.test'); worker = await login('worker'); other = await login('other');
 }, 30000);
@@ -70,6 +70,53 @@ afterAll(async () => {
   }
 });
 describe('server authentication and fixed-role isolation', () => {
+  it('publishes mapped plan stages only after rector approval and completes them through rector evidence review', async () => {
+    const source={title:'Official multi-stage plan',year:2027,sourceName:'official.xlsx',sections:[{number:'I',title:'Development'}],items:[{
+      number:1,sectionNumber:'I',sectionTitle:'Development',title:'Annual development programme',mechanism:'Prepare the programme, then implement it.',schedule:'2027 I quarter; then September 2027',fundingSource:'University',oversight:'Prorektor',responsible:'Original source staff',distributedUnits:'Original source departments',
+    }]};
+    expect((await request(worker,'/work-plans/import','POST',source)).status).toBe(403);
+    const imported=await request(admin,'/work-plans/import','POST',source);expect(imported.status).toBe(201);
+    const planId=imported.body.id;
+    expect((await request(admin,'/work-plans/import','POST',source)).status).toBe(409);
+    const getPlan=async(client=admin)=>(await request(client,'/work-plans')).body.find(p=>p.id===planId);
+    let plan=await getPlan();expect(plan.active).toBe(false);expect(plan.items[0].schedule).toBe(source.items[0].schedule);
+    expect(await getPlan(worker)).toBeUndefined();
+    expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:1,priority:'HIGH',rectorId:'director',mappings:[]})).status).toBe(200);
+    expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:2})).status).toBe(400);
+    const mappings=[{itemNumber:1,stages:[{title:'Prepare programme',deadline:'2027-03-31',assignees:[{userId:'worker',departmentId:'dept'}]},{title:'Implement programme',deadline:'2027-09-30',assignees:[{userId:'worker',departmentId:'dept'},{userId:'other',departmentId:'dept'}]}]}];
+    expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:2,priority:'CRITICAL',rectorId:'director',mappings})).status).toBe(200);
+    expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:2,priority:'LOW',rectorId:'director',mappings})).status).toBe(409);
+    expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:3})).status).toBe(200);
+    expect((await database.query('SELECT id FROM ut_tasks WHERE work_plan_id=$1',[planId])).rowCount).toBe(0);
+    expect((await request(admin,`/work-plans/${planId}/decision`,'POST',{version:4,decision:'APPROVE',remarks:''})).status).toBe(403);
+    expect((await request(director,`/work-plans/${planId}/decision`,'POST',{version:4,decision:'RETURN',remarks:'Clarify the programme scope.'})).status).toBe(200);
+    expect((await getPlan()).workflow.status).toBe('RETURNED');
+    expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:5,priority:'CRITICAL',rectorId:'director',mappings})).status).toBe(200);
+    expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:6})).status).toBe(200);
+    expect((await request(director,`/work-plans/${planId}/decision`,'POST',{version:7,decision:'APPROVE',remarks:'Approved for execution.'})).status).toBe(200);
+    expect((await request(director,`/work-plans/${planId}/decision`,'POST',{version:7,decision:'APPROVE',remarks:''})).status).toBe(409);
+    plan=await getPlan();expect(plan.active).toBe(true);expect(plan.workflow.status).toBe('ACTIVE');
+    expect((await database.query("SELECT id FROM ut_notifications WHERE task_id IN (SELECT id FROM ut_tasks WHERE work_plan_id=$1) AND type='NEW_ASSIGNMENT'",[planId])).rowCount).toBe(3);
+    const assigned=(await request(worker,'/state')).body.tasks.filter(t=>t.workPlanId===planId);expect(assigned).toHaveLength(2);
+    expect(assigned[0].priority).toBeUndefined();
+    expect(assigned[0].createdById).toBe('director');expect(assigned[0].sourceSchedule).toBe(source.items[0].schedule);
+    const workerPlan=await getPlan(worker);expect(workerPlan.items).toHaveLength(0);expect(workerPlan.workflow.priority).toBe('CRITICAL');
+    expect((await request(admin,`/tasks/${assigned[0].id}`,'PATCH',{version:assigned[0].version,priority:'LOW'})).status).toBe(409);
+    for(const stage of plan.workflow.mappings[0].stages) {
+      for(const member of stage.assignees) {
+        const client=member.userId==='worker'?worker:other;
+        let task=await taskFor(client,stage.taskId);
+        expect((await request(client,`/tasks/${task.id}/start`,'POST',{version:task.version})).status).toBe(200);
+        task=await taskFor(client,task.id);
+        expect((await request(client,`/tasks/${task.id}/evidence`,'POST',{version:task.version,type:'TEXT_NOTE',note:'Documented execution evidence for this plan stage.'})).status).toBe(201);
+        task=await taskFor(director,task.id);
+        const proof=task.proofs.find(p=>p.submittedById===member.userId&&p.status==='PENDING');
+        expect((await request(admin,`/tasks/${task.id}/reviews`,'POST',{version:task.version,evidenceId:proof.id,decision:'APPROVED',remarks:'Admin cannot approve rector plan.'})).status).toBe(403);
+        expect((await request(director,`/tasks/${task.id}/reviews`,'POST',{version:task.version,evidenceId:proof.id,decision:'APPROVED',remarks:'Evidence verified by rector.'})).status).toBe(200);
+      }
+    }
+    expect((await getPlan()).workflow.status).toBe('COMPLETED');
+  });
   it('tracks cross-department participants independently and shares only submitted evidence', async () => {
     await database.query("INSERT INTO ut_departments(id,code,name) VALUES('team-dept','TEAM','Second department')");
     await database.query("INSERT INTO ut_memberships(user_id,department_id) VALUES('other','team-dept')");

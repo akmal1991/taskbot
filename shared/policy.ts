@@ -12,7 +12,7 @@ export const ROLE_CEILINGS: Record<Role, readonly Permission[]> = {
   ADMIN: PERMISSIONS,
   PROREKTOR: PERMISSIONS,
   DIRECTOR: ['tasks.readAll', 'tasks.create', 'tasks.edit', 'tasks.start', 'tasks.progress',
-    'tasks.submit', 'tasks.comment', 'tasks.review', 'reports.export', 'audit.read', 'tickets.resolve'],
+    'tasks.submit', 'tasks.comment', 'tasks.review', 'reports.export', 'audit.read', 'tickets.resolve', 'workplans.manage'],
   WORKER: ['tasks.start', 'tasks.progress', 'tasks.submit', 'tasks.comment'],
 };
 export const effectivePermissions = (role: Role, configured?: readonly string[]): Permission[] => {

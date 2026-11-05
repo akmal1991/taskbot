@@ -52,7 +52,7 @@ const draftPlanItemInput = z.object({
     sampleResponsible: z.string().trim().min(1).max(5000).optional(),
   }).strict().optional(),
 }).strict();
-const draftPlanInput = z.object({
+export const draftPlanInput = z.object({
   title: z.string().trim().min(1).max(1000),
   year: z.number().int().min(2000).max(2200),
   sourceName: z.string().trim().min(1).max(255),
@@ -60,7 +60,7 @@ const draftPlanInput = z.object({
   items: z.array(draftPlanItemInput).min(1).max(2000),
 }).strict();
 
-function validateDraftPlan(plan: z.infer<typeof draftPlanInput>) {
+export function validateDraftPlan(plan: z.infer<typeof draftPlanInput>) {
   const errors: string[] = [];
   const sectionNumbers = plan.sections.map(section => section.number);
   const itemNumbers = plan.items.map(item => item.number);
@@ -284,6 +284,7 @@ export function adminRoutes(database: pg.Pool) {
     await transaction(database, async db => {
       const before = (await db.query('SELECT * FROM ut_work_plans WHERE id=$1 FOR UPDATE', [req.params.id])).rows[0];
       if (!before) throw new HttpError(404, 'Work plan not found.');
+      if(before.data?.workflow) throw new HttpError(409, 'Manage this item through its approved work plan.');
       if (input.active === true && before.data?.draftImportKind === 'UNASSIGNED_DRAFT') {
         throw new HttpError(400, 'Unassigned draft plans cannot be activated before their items are assigned.');
       }

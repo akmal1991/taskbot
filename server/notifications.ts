@@ -4,14 +4,16 @@ import { priorityLabels, prioritySticker } from './prioritySticker';
 
 export async function queueAssignmentNotification(db: DB, taskId: string, userId: string, departmentId: string) {
   const task = (await db.query(`SELECT t.*,creator.full_name AS creator_name,recipient.full_name AS recipient_name,
-    d.name AS department_name,c.name AS category_name FROM ut_tasks t
+    d.name AS department_name,c.name AS category_name,p.title AS work_plan_title,p.data->'workflow' AS plan_workflow FROM ut_tasks t
     JOIN ut_users creator ON creator.id=t.creator_id JOIN ut_users recipient ON recipient.id=$2
-    JOIN ut_departments d ON d.id=$3 LEFT JOIN ut_categories c ON c.id=t.category_id WHERE t.id=$1`, [taskId,userId,departmentId])).rows[0];
+    JOIN ut_departments d ON d.id=$3 LEFT JOIN ut_categories c ON c.id=t.category_id LEFT JOIN ut_work_plans p ON p.id=t.work_plan_id WHERE t.id=$1`, [taskId,userId,departmentId])).rows[0];
   const body = [
-    '📋 YANGI TOPSHIRIQ', '', `🔢 Reja kodi: ${task.plan_code}`, `📝 Topshiriq: ${task.title}`,
-    `🚦 Muhimlik: ${priorityLabels[task.priority] || task.priority}`,
+    task.plan_workflow ? '📋 ISH REJASI IJROSI BIRIKTIRILDI' : '📋 YANGI TOPSHIRIQ', '',
+    ...(task.plan_workflow ? [`📚 Ish rejasi: ${task.work_plan_title}`,`🚦 Ish rejasi muhimligi: ${priorityLabels[task.plan_workflow.priority]}`] : []),
+    `🔢 Reja kodi: ${task.plan_code}`, `📝 Band / bosqich: ${task.title}`,
+    ...(!task.plan_workflow ? [`🚦 Muhimlik: ${priorityLabels[task.priority] || task.priority}`] : []),
     `📅 Bajarish muddati: ${new Date(task.deadline).toISOString().slice(0,10)}`,
-    `👤 Topshiriq beruvchi: ${task.creator_name}`, `🏢 Mas’ul bo‘lim: ${task.department_name}`,
+    `${task.plan_workflow?'👤 Rejani tasdiqlagan rektor':'👤 Topshiriq beruvchi'}: ${task.creator_name}`, `🏢 Mas’ul bo‘lim: ${task.department_name}`,
     `👷 Ijrochi: ${task.recipient_name}`, ...(task.category_name ? [`🗂 Kategoriya: ${task.category_name}`] : []),
     ...(task.data?.description ? ['', '📄 Amalga oshirish mexanizmi:', String(task.data.description).slice(0,1800)] : []),
     ...(task.data?.expectedOutcome ? ['', `🎯 Kutilayotgan natija: ${String(task.data.expectedOutcome).slice(0,400)}`] : []),
@@ -46,8 +48,9 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
         processed++;
       }
     } else {
-      const rows = (await db.query(`SELECT n.*,u.telegram_id,u.active,t.priority FROM ut_notifications n JOIN ut_users u ON u.id=n.user_id
+      const rows = (await db.query(`SELECT n.*,u.telegram_id,u.active,COALESCE(p.data->'workflow'->>'priority',t.priority) AS priority FROM ut_notifications n JOIN ut_users u ON u.id=n.user_id
         LEFT JOIN ut_tasks t ON t.id=n.task_id
+        LEFT JOIN ut_work_plans p ON p.id=t.work_plan_id
         WHERE n.status IN ('WAITING','FAILED') AND n.attempts<5 AND n.next_attempt_at<=now()
         AND u.active=true AND u.telegram_id IS NOT NULL ORDER BY n.created_at LIMIT 20 FOR UPDATE OF n SKIP LOCKED`)).rows;
       for (const n of rows) {
@@ -61,7 +64,7 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
             const reply = await transport(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ chat_id: n.telegram_id, text: `${n.title}\n${n.body}`.slice(0, 4096),
-                ...(taskUrl && n.task_id ? { reply_markup: { inline_keyboard: [[{ text: '🚀 UniTaskni ochish', style: 'primary', web_app: { url: taskUrl } }]] } } : {}) }),
+                ...(taskUrl && (n.task_id || n.type.startsWith('WORK_PLAN_')) ? { reply_markup: { inline_keyboard: [[{ text: '🚀 UniTaskni ochish', style: 'primary', web_app: { url: taskUrl } }]] } } : {}) }),
               signal: AbortSignal.timeout(8000),
             });
             const data = await reply.json() as { ok?: boolean; result?: { message_id: number } };

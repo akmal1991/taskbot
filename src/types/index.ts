@@ -88,6 +88,11 @@ export interface TaskComment {
 }
 
 export interface Task {
+  managedWorkPlan?: boolean;
+  workPlanItemNumber?: number;
+  workPlanItemTitle?: string;
+  workPlanStage?: number;
+  sourceSchedule?: string;
   additionalAssignees?: { userId: string; departmentId: string }[];
   assignments?: { userId: string; departmentId: string; fullName: string; departmentName: string; status: TaskStatus; progress: number }[];
   departmentIds?: string[];

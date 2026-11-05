@@ -13,8 +13,9 @@ import { readSettings } from './notifications';
 import { verifyTelegramInitData } from './telegramAuth';
 import { isAssignee } from './taskAssignments';
 import { ticketVisibleSQL, ticketRespondSQL } from './ticketAccess';
+import { workPlanRoutes } from './workPlanRoutes';
 
-export function createApplication(database: pg.Pool, options: { telegramBotToken?: string } = {}) {
+export function createApplication(database: pg.Pool, options: { telegramBotToken?: string; apiRequestLimit?: number } = {}) {
   const app = express();
   app.disable('x-powered-by'); app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: process.env.NODE_ENV === 'production' ? { directives: {
@@ -25,7 +26,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
   } } : false, frameguard:false, strictTransportSecurity: process.env.NODE_ENV === 'production' ? undefined : false }));
   const api = express.Router();
   api.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
-  api.use(rateLimit({ windowMs: 60000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false,
+  api.use(rateLimit({ windowMs: 60000, limit: options.apiRequestLimit ?? 300, standardHeaders: 'draft-8', legacyHeaders: false,
     message: { error: 'Too many requests. Please wait a minute.' } }));
   api.use(express.json({ limit: '12mb' }));
   api.use(originGuard);
@@ -38,6 +39,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
   api.use(requireAuth, csrfGuard);
   api.use('/tasks', taskRoutes(database));
   api.use('/admin', adminRoutes(database));
+  api.use('/work-plans', workPlanRoutes(database));
   api.use(importRoutes(database));
   api.get('/state', wrap(async (req, res) => {
     const actor = req.actor!;
@@ -45,7 +47,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       getTasks(database, actor), getDepartments(database, actor),
       database.query(`${usersSelect} WHERE ($1::boolean OR u.id=$2) ORDER BY u.full_name`, [actor.role !== 'WORKER', actor.id]),
       actor.permissions.includes('audit.read') ? database.query(`SELECT * FROM ut_audit
-        WHERE ($1::boolean OR action LIKE 'TASK%' OR action LIKE 'EVIDENCE%' OR action IN ('COMMENT_ADDED','PROGRESS_UPDATED','ATTACHMENT_UPLOADED','REPORT_EXPORTED'))
+        WHERE ($1::boolean OR action LIKE 'TASK%' OR action LIKE 'EVIDENCE%' OR action LIKE 'WORK_PLAN%' OR action IN ('COMMENT_ADDED','PROGRESS_UPDATED','ATTACHMENT_UPLOADED','REPORT_EXPORTED'))
         ORDER BY created_at DESC LIMIT 500`, [['ADMIN', 'PROREKTOR'].includes(actor.role)]) : Promise.resolve({ rows: [] }),
       database.query('SELECT * FROM ut_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200', [actor.id]),
       database.query(`SELECT t.*,u.full_name,u.email,u.data,d.name AS department_name,source.name AS sender_department_name,
@@ -165,6 +167,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
       const t = await lockedTask(db, input.taskId, req.actor!);
       if (t.archived_at || t.draft) throw new HttpError(409, 'Task is not executable.');
       const review = ['APPROVE_PROOF','REJECT_PROOF'].includes(input.action);
+      if (review && t.data?.managedWorkPlan && (req.actor!.role !== 'DIRECTOR' || req.actor!.id !== t.approver_id)) throw new HttpError(403, 'Only the selected rector may review this work-plan evidence.');
       const permission = review ? 'tasks.review' : input.action === 'CLOCK_IN' ? 'tasks.start' : 'tasks.submit';
       if (!req.actor!.permissions.includes(permission) || (review ? isAssignee(t, req.actor!.id) ||
         (!['ADMIN', 'PROREKTOR'].includes(req.actor!.role) && t.approver_id && t.approver_id !== req.actor!.id) : !isAssignee(t, req.actor!.id)))

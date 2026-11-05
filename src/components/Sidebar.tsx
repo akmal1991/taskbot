@@ -43,14 +43,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
     },
     {
       id: 'tasks',
-      label: 'Ish Reja Vazifalari',
+      label: 'Work plans and execution',
       icon: CheckSquare,
       badge: tasks.length.toString(),
       allowedRoles: ['DIRECTOR', 'ADMIN', 'WORKER'],
     },
     {
       id: 'proofs',
-      label: 'Proof-of-Work Tekshiruvi',
+      label: 'Review submitted evidence',
       icon: FileCheck2,
       badge: pendingProofsCount > 0 ? pendingProofsCount.toString() : null,
       badgeColor: 'amber',
@@ -58,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
     },
     {
       id: 'excel',
-      label: 'Excel Ingestion & Reja',
+      label: 'Import official work plan',
       icon: FileSpreadsheet,
       badge: null,
       allowedRoles: ['ADMIN'],
