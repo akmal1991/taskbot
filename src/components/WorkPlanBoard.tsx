@@ -7,7 +7,7 @@ import type { Priority } from '../types';
 
 type Member = { userId:string; departmentId:string };
 type Stage = { title:string; deadline:string|null; scheduleKind?:'DATE'|'CONTINUOUS'|'CONTRACT'; assignees:Member[]; taskId?:string };
-type Mapping = { itemNumber:number; stages:Stage[] };
+type Mapping = { itemNumber:number; stages:Stage[]; responsibleDepartmentIds?:string[] };
 type Workflow = { status:string; version:number; priority?:Priority|null|''; rectorId:string; mappings:Mapping[]; remarks?:string; approvedAt?:string; approvedBy?:string };
 type Plan = { id:string; title:string; year:number; sourceName:string; active:boolean; legacy:boolean; items:DraftPlanItem[]; workflow:Workflow };
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
@@ -130,7 +130,7 @@ export const WorkPlanBoard: React.FC = () => {
     </>}
     {currentItem&&editable&&<div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-2 sm:p-6">
       <form role="dialog" aria-modal="true" aria-labelledby="mapping-title" className="max-h-[94dvh] w-full max-w-3xl space-y-4 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-slate-900 sm:p-6" onSubmit={e=>{
-        e.preventDefault();setMappings(values=>[...values.filter(m=>m.itemNumber!==currentItem.number),{itemNumber:currentItem.number,stages}]);setDirty(true);setItemNumber(null);
+        e.preventDefault();setMappings(values=>[...values.filter(m=>m.itemNumber!==currentItem.number),{...values.find(m=>m.itemNumber===currentItem.number),itemNumber:currentItem.number,stages}]);setDirty(true);setItemNumber(null);
       }}>
         <h2 id="mapping-title" className="font-bold">{`${currentItem.number}. ${currentItem.title}`}</h2><p className="whitespace-pre-wrap rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{`${t('Source schedule')}: ${currentItem.schedule}`}</p>
         <p className="text-sm text-slate-500">{t('Enter each stage and confirm its exact deadline. Source dates are never guessed.')}</p>

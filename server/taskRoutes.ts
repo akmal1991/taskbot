@@ -38,7 +38,7 @@ async function dependencies(db: pg.PoolClient, taskId: string, ids: string[]) {
   for (const dependency of ids) await db.query('INSERT INTO ut_dependencies(task_id,depends_on_id) VALUES($1,$2)', [taskId, dependency]);
 }
 export async function insertTask(db: pg.PoolClient, actorId: string, input: z.infer<typeof taskInput>, preserveId?: string, managedPublication = false,
-  managedData?: { deadline:string|null; scheduleKind:string; sourceSchedule:string; workPlanItemNumber:number; workPlanItemTitle:string; workPlanStage:number }) {
+  managedData?: { deadline:string|null; scheduleKind:string; sourceSchedule:string; workPlanItemNumber:number; workPlanItemTitle:string; workPlanStage:number; responsibleDepartmentIds:string[] }) {
   await validateReferences(db, input);
   if(input.workPlanId && !managedPublication && (await db.query("SELECT id FROM ut_work_plans WHERE id=$1 AND data ? 'workflow'",[input.workPlanId])).rowCount) throw new HttpError(409, 'Manage this item through its approved work plan.');
   const team = [{ userId: input.assignedToId, departmentId: input.departmentId }, ...(input.additionalAssignees || [])];

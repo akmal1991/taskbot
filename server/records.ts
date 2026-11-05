@@ -45,7 +45,7 @@ export async function getTasks(db: DB, actor: Actor) {
   for (const row of rows) {
     const dto = tasks.find(t => t.id === row.id);
     dto.assignments = assignmentsOf(row).map(a => ({ ...a, fullName: members.find(u => u.id === a.userId)?.full_name || '', departmentName: teamDepartments.find(d => d.id === a.departmentId)?.name || '' }));
-    dto.departmentIds = dto.assignments.map((a: any) => a.departmentId);
+    dto.departmentIds = [...new Set([...dto.assignments.map((a: any) => a.departmentId),...(row.data?.responsibleDepartmentIds||[])])];
     dto.overallStatus = row.status; dto.overallProgress = row.progress;
     if (dto.assignments.length > 1) { dto.assignedToName = dto.assignments.map((a: any) => a.fullName).join(', '); dto.departmentName = [...new Set(dto.assignments.map((a: any) => a.departmentName))].join(', '); }
     const own = dto.assignments.find((a: any) => a.userId === actor.id);

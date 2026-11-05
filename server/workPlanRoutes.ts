@@ -14,7 +14,7 @@ const stageInput = z.object({
   scheduleKind: z.enum(['DATE','CONTINUOUS','CONTRACT']).default('DATE'),
   assignees: z.array(z.object({ userId: z.string().min(1).max(128), departmentId: z.string().min(1).max(128) }).strict()).min(1).max(50),
 }).strict().refine(stage=>stage.deadline!==null||stage.scheduleKind!=='DATE','Use an explicit date or an open-ended schedule.');
-const mappingInput = z.object({ itemNumber: z.number().int().positive(), stages: z.array(stageInput).min(1).max(30) }).strict();
+const mappingInput = z.object({ itemNumber: z.number().int().positive(), stages: z.array(stageInput).min(1).max(30),responsibleDepartmentIds:z.array(z.string().min(1).max(128)).max(50).optional() }).strict();
 const versionInput = z.object({ version: z.number().int().positive() }).strict();
 const flowOf = (p: any) => p.data.workflow || { status: 'DRAFT', version: 1, mappings: [], priority: null, rectorId: '' };
 async function locked(db: DB, planId: string, version: number) {
@@ -36,6 +36,11 @@ async function validateSetup(db: DB, p: any, flow: any) {
   for (const mapping of flow.mappings) for (const stage of mapping.stages) {
     if (new Set(stage.assignees.map((a: any) => a.userId)).size !== stage.assignees.length) throw new HttpError(400, 'Each assignee may only be selected once.');
     for (const member of stage.assignees) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: flow.rectorId });
+    if(mapping.responsibleDepartmentIds?.length){
+      const covered=await db.query(`SELECT DISTINCT d.id FROM ut_departments d WHERE d.id=ANY($1::text[]) AND d.active=true AND EXISTS (
+        SELECT 1 FROM ut_users u WHERE u.id=ANY($2::text[]) AND u.active=true AND (u.department_id=d.id OR EXISTS(SELECT 1 FROM ut_memberships m WHERE m.user_id=u.id AND m.department_id=d.id)))`,[mapping.responsibleDepartmentIds,stage.assignees.map((a:any)=>a.userId)]);
+      if(covered.rowCount!==new Set(mapping.responsibleDepartmentIds).size)throw new HttpError(400,'Each responsible department needs an assigned representative.');
+    }
   }
 }
 export function workPlanRoutes(database: pg.Pool) {
@@ -118,7 +123,7 @@ export function workPlanRoutes(database: pg.Pool) {
               approverId:flow.rectorId,workPlanId:p.id,sectionId:sections.find(s=>s.number===item.sectionNumber)?.id,
               priority:'MEDIUM',deadline:stage.deadline||'',requiresEvidence:true,requiresApproval:true,draft:false,
               fundingSource:item.fundingSource,sourceReference:`${p.title} / ${item.number}`,
-            },undefined,true,{deadline:stage.deadline,scheduleKind:stage.scheduleKind,sourceSchedule:item.schedule,workPlanItemNumber:item.number,workPlanItemTitle:item.title,workPlanStage:index+1});
+            },undefined,true,{deadline:stage.deadline,scheduleKind:stage.scheduleKind,sourceSchedule:item.schedule,workPlanItemNumber:item.number,workPlanItemTitle:item.title,workPlanStage:index+1,responsibleDepartmentIds:mapping.responsibleDepartmentIds||stage.assignees.map((a:any)=>a.departmentId)});
             stage.taskId=taskId;
           }
         }

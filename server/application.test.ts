@@ -94,8 +94,13 @@ describe('server authentication and fixed-role isolation', () => {
     expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:1,priority:'HIGH',rectorId:'director',mappings:[]})).status).toBe(200);
     expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:2})).status).toBe(400);
     const mappings=[{itemNumber:1,stages:[{title:'Prepare programme',deadline:'2027-03-31',assignees:[{userId:'worker',departmentId:'dept'}]},{title:'Implement programme',deadline:'2027-09-30',assignees:[{userId:'worker',departmentId:'dept'},{userId:'other',departmentId:'dept'}]},{title:'Continuous monitoring',deadline:null,scheduleKind:'CONTINUOUS',assignees:[{userId:'other',departmentId:'dept'}]}]}];
+    await database.query("INSERT INTO ut_departments(id,code,name) VALUES('coverage-dept','COVER','Additional responsible unit')");
+    mappings[0].responsibleDepartmentIds=['dept','coverage-dept'];
     expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:2,priority:'CRITICAL',rectorId:'director',mappings})).status).toBe(200);
     expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:2,priority:'LOW',rectorId:'director',mappings})).status).toBe(409);
+    const uncovered=await request(admin,`/work-plans/${planId}/submit`,'POST',{version:3});
+    expect(uncovered.status).toBe(400);expect(uncovered.body.error).toBe('Each responsible department needs an assigned representative.');
+    await database.query("INSERT INTO ut_memberships(user_id,department_id) VALUES('worker','coverage-dept'),('other','coverage-dept')");
     expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:3})).status).toBe(200);
     expect((await database.query('SELECT id FROM ut_tasks WHERE work_plan_id=$1',[planId])).rowCount).toBe(0);
     expect((await request(admin,`/work-plans/${planId}/decision`,'POST',{version:4,decision:'APPROVE',remarks:''})).status).toBe(403);
@@ -112,7 +117,7 @@ describe('server authentication and fixed-role isolation', () => {
     expect(messages.every(n=>!n.body.includes('🚦'))).toBe(true);
     expect(messages.some(n=>n.body.includes('Doimiy'))).toBe(true);
     const assigned=(await request(worker,'/state')).body.tasks.filter(t=>t.workPlanId===planId);expect(assigned).toHaveLength(2);
-    expect(assigned[0].priority).toBeUndefined();
+    expect(assigned[0].priority).toBeUndefined();expect(assigned[0].departmentIds).toContain('coverage-dept');
     expect(assigned[0].createdById).toBe('director');expect(assigned[0].sourceSchedule).toBe(source.items[0].schedule);
     const workerPlan=await getPlan(worker);expect(workerPlan.items).toHaveLength(0);expect(workerPlan.workflow.priority).toBeNull();
     expect((await request(admin,`/tasks/${assigned[0].id}`,'PATCH',{version:assigned[0].version,priority:'LOW'})).status).toBe(409);

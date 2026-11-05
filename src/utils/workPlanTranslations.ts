@@ -7,6 +7,7 @@ const entries: Record<string,[string,string]> = {
   'CONTRACT':['Shartnomaga muvofiq','По договору'],
   'Continuous execution':['Doimiy ijro','Постоянное исполнение'],
   'Contract schedule':['Shartnomaga muvofiq','По договору'],
+  'Each responsible department needs an assigned representative.':['Har bir mas’ul bo‘linma uchun ijrochi biriktirilishi kerak.','Каждому ответственному подразделению нужен назначенный исполнитель.'],
   'ALL':['Barchasi','Все'],
   'Choose priority':['Muhimlik darajasini tanlang','Выберите приоритет'],
   'Choose the work-plan priority.':['Ish rejasining muhimlik darajasini tanlang.','Выберите приоритет плана работ.'],
