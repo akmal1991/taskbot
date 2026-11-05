@@ -136,6 +136,24 @@ describe('server authentication and fixed-role isolation', () => {
     }
     expect((await getPlan()).workflow.status).toBe('COMPLETED');
   });
+  it('releases available assignments only with explicit partial submission and rector approval',async()=>{
+    const item={number:1,sectionNumber:'I',sectionTitle:'Partial',title:'Available item',mechanism:'Execute verified scope.',schedule:'2027',fundingSource:'University',oversight:'Rector',responsible:'Worker',distributedUnits:'Pending unit'};
+    const imported=await request(admin,'/work-plans/import','POST',{title:'Explicit partial release',year:2027,sourceName:'partial.xlsx',sections:[{number:'I',title:'Partial'}],items:[item,{...item,number:2,title:'Still unassigned'}]});
+    expect(imported.status).toBe(201);const planId=imported.body.id;
+    const mappings=[{itemNumber:1,responsibleDepartmentIds:['dept','pending-unit'],stages:[{title:'Assigned stage',deadline:'2027-12-31',assignees:[{userId:'worker',departmentId:'dept'}]}]}];
+    expect((await request(admin,`/work-plans/${planId}/setup`,'PUT',{version:1,rectorId:'director',mappings})).status).toBe(200);
+    expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:2})).status).toBe(400);
+    expect((await request(worker,`/work-plans/${planId}/submit`,'POST',{version:2,publishAssignedOnly:true})).status).toBe(403);
+    expect((await request(admin,`/work-plans/${planId}/submit`,'POST',{version:2,publishAssignedOnly:true})).status).toBe(200);
+    expect((await request(admin,`/work-plans/${planId}/decision`,'POST',{version:3,decision:'APPROVE',remarks:''})).status).toBe(403);
+    expect((await request(director,`/work-plans/${planId}/decision`,'POST',{version:3,decision:'APPROVE',remarks:'Release assigned scope only.'})).status).toBe(200);
+    const p=(await request(admin,'/work-plans')).body.find(p=>p.id===planId);
+    expect(p.items).toHaveLength(2);expect(p.workflow.unassignedItemNumbers).toEqual([2]);expect(p.workflow.deferredDepartmentIds).toEqual(['pending-unit']);
+    expect((await request(worker,'/work-plans')).body.some(p=>p.id===planId)).toBe(true);
+    expect((await request(other,'/work-plans')).body.some(p=>p.id===planId)).toBe(false);
+    const assigned=(await request(worker,'/state')).body.tasks.filter(t=>t.workPlanId===planId);expect(assigned).toHaveLength(1);expect(assigned[0].approverId).toBe('director');
+    expect((await database.query('SELECT id FROM ut_tasks WHERE work_plan_id=$1',[planId])).rowCount).toBe(1);
+  });
   it('tracks cross-department participants independently and shares only submitted evidence', async () => {
     await database.query("INSERT INTO ut_departments(id,code,name) VALUES('team-dept','TEAM','Second department')");
     await database.query("INSERT INTO ut_memberships(user_id,department_id) VALUES('other','team-dept')");

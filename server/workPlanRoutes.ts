@@ -31,17 +31,22 @@ async function validateSetup(db: DB, p: any, flow: any) {
   const rector = (await db.query("SELECT id FROM ut_users WHERE id=$1 AND active=true AND role='DIRECTOR'", [flow.rectorId])).rows[0];
   if (!rector) throw new HttpError(400, 'Choose an active rector for final approval.');
   const itemNumbers = p.data.items.map((item: any) => item.number);
-  if (flow.mappings.length !== itemNumbers.length || new Set(flow.mappings.map((m: any) => m.itemNumber)).size !== itemNumbers.length || flow.mappings.some((m: any) => !itemNumbers.includes(m.itemNumber)))
+  const assignedOnly=flow.publishAssignedOnly===true;
+  if (!flow.mappings.length || (!assignedOnly && flow.mappings.length !== itemNumbers.length) || new Set(flow.mappings.map((m: any) => m.itemNumber)).size !== flow.mappings.length || flow.mappings.some((m: any) => !itemNumbers.includes(m.itemNumber)))
     throw new HttpError(400, 'Assign every work-plan item and confirm each stage deadline.');
+  const deferredDepartments=new Set<string>();
   for (const mapping of flow.mappings) for (const stage of mapping.stages) {
     if (new Set(stage.assignees.map((a: any) => a.userId)).size !== stage.assignees.length) throw new HttpError(400, 'Each assignee may only be selected once.');
     for (const member of stage.assignees) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: flow.rectorId });
     if(mapping.responsibleDepartmentIds?.length){
       const covered=await db.query(`SELECT DISTINCT d.id FROM ut_departments d WHERE d.id=ANY($1::text[]) AND d.active=true AND EXISTS (
         SELECT 1 FROM ut_users u WHERE u.id=ANY($2::text[]) AND u.active=true AND (u.department_id=d.id OR EXISTS(SELECT 1 FROM ut_memberships m WHERE m.user_id=u.id AND m.department_id=d.id)))`,[mapping.responsibleDepartmentIds,stage.assignees.map((a:any)=>a.userId)]);
-      if(covered.rowCount!==new Set(mapping.responsibleDepartmentIds).size)throw new HttpError(400,'Each responsible department needs an assigned representative.');
+      const missing=mapping.responsibleDepartmentIds.filter((departmentId:string)=>!covered.rows.some(d=>d.id===departmentId));
+      if(missing.length&&!assignedOnly)throw new HttpError(400,'Each responsible department needs an assigned representative.');
+      for(const departmentId of missing)deferredDepartments.add(departmentId);
     }
   }
+  return {unassignedItemNumbers:itemNumbers.filter((number:number)=>!flow.mappings.some((m:any)=>m.itemNumber===number)),deferredDepartmentIds:[...deferredDepartments]};
 }
 export function workPlanRoutes(database: pg.Pool) {
   const router = Router();
@@ -55,7 +60,7 @@ export function workPlanRoutes(database: pg.Pool) {
     res.json(plans.map(p => ({ id:p.id,title:p.title,year:p.year,active:p.active,sourceName:p.data.sourceName || '',
       items: manager ? p.data.items || [] : [], sections:p.data.sections || [],
       workflow: {...(manager ? flowOf(p) : {priority:flowOf(p).priority,rectorId:flowOf(p).rectorId}),
-        status:flowOf(p).status==='ACTIVE'&&p.stage_count>0&&p.unfinished_count===0?'COMPLETED':flowOf(p).status},
+        status:flowOf(p).status==='ACTIVE'&&!flowOf(p).unassignedItemNumbers?.length&&!flowOf(p).deferredDepartmentIds?.length&&p.stage_count>0&&p.unfinished_count===0?'COMPLETED':flowOf(p).status},
       legacy: !Array.isArray(p.data.items),
     })));
   }));
@@ -89,14 +94,14 @@ export function workPlanRoutes(database: pg.Pool) {
     }); res.json({ok:true});
   }));
   router.post('/:id/submit', permit('workplans.manage'), wrap(async (req,res) => {
-    const {version} = versionInput.parse(req.body);
+    const {version,publishAssignedOnly} = versionInput.extend({publishAssignedOnly:z.boolean().default(false)}).parse(req.body);
     await transaction(database,async db => {
       const p = await locked(db,String(req.params.id),version),flow=flowOf(p);
       if (flow.status!=='DRAFT' || p.active) throw new HttpError(409,'Only draft or returned work plans can be edited.');
-      await validateSetup(db,p,flow);
-      await save(db,p,{...flow,status:'PENDING_APPROVAL',submittedBy:req.actor!.id,submittedAt:new Date().toISOString()});
+      const pending=await validateSetup(db,p,{...flow,publishAssignedOnly});
+      await save(db,p,{...flow,...pending,publishAssignedOnly,status:'PENDING_APPROVAL',submittedBy:req.actor!.id,submittedAt:new Date().toISOString()});
       await db.query("INSERT INTO ut_notifications(id,user_id,type,title,body) VALUES($1,$2,'WORK_PLAN_APPROVAL',$3,$4)",[id('notice'),flow.rectorId,p.title,'Ish rejasi biriktirildi. Bandlar va muddatlarni tekshirib, ijroga tasdiqlang.']);
-      await audit(db,req,'WORK_PLAN_SUBMITTED',p.id,null,{rectorId:flow.rectorId});
+      await audit(db,req,'WORK_PLAN_SUBMITTED',p.id,null,{rectorId:flow.rectorId,publishAssignedOnly,...pending});
     }); res.json({ok:true});
   }));
   router.post('/:id/decision', permit('tasks.review'), wrap(async (req,res) => {

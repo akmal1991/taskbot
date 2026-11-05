@@ -1,4 +1,6 @@
 const entries: Record<string,[string,string]> = {
+  'Send assigned items to rector':['Biriktirilgan bandlarni tasdiqqa yuborish','Направить назначенные пункты ректору'],
+  'Assigned items are released; unassigned responsibilities remain pending.':['Faqat biriktirilgan ijrochilar uchun tasdiqlanadi. Biriktirilmagan mas’ullar kutilmoqda.','Утверждаются только назначенные исполнители. Неназначенные ответственные ожидают назначения.'],
   ',':[',',','], 'Previous':['Oldingi','Назад'], 'Next':['Keyingi','Далее'],
   'Save progress':['Ijro foizini saqlash','Сохранить прогресс'],
   'Schedule type':['Muddat turi','Тип срока'],

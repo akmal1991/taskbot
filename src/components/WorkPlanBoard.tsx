@@ -8,7 +8,7 @@ import type { Priority } from '../types';
 type Member = { userId:string; departmentId:string };
 type Stage = { title:string; deadline:string|null; scheduleKind?:'DATE'|'CONTINUOUS'|'CONTRACT'; assignees:Member[]; taskId?:string };
 type Mapping = { itemNumber:number; stages:Stage[]; responsibleDepartmentIds?:string[] };
-type Workflow = { status:string; version:number; priority?:Priority|null|''; rectorId:string; mappings:Mapping[]; remarks?:string; approvedAt?:string; approvedBy?:string };
+type Workflow = { status:string; version:number; priority?:Priority|null|''; rectorId:string; mappings:Mapping[]; remarks?:string; approvedAt?:string; approvedBy?:string; publishAssignedOnly?:boolean };
 type Plan = { id:string; title:string; year:number; sourceName:string; active:boolean; legacy:boolean; items:DraftPlanItem[]; workflow:Workflow };
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white p-2.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
 const buttonClass = 'rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-40 dark:border-slate-600';
@@ -88,6 +88,7 @@ export const WorkPlanBoard: React.FC = () => {
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="max-w-3xl font-bold">{plan.title}</h2><span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">{t(plan.legacy?'Previous records':plan.workflow.status)}</span></div>
         {plan.workflow.remarks&&<p className="whitespace-pre-wrap rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{plan.workflow.remarks}</p>}
+        {plan.workflow.publishAssignedOnly&&<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{t('Assigned items are released; unassigned responsibilities remain pending.')}</p>}
         {plan.workflow.approvedAt&&<p className="text-sm text-slate-500">{`${t('Rector approved')}: ${new Date(plan.workflow.approvedAt).toLocaleString(language)}`}</p>}
         {!plan.legacy&&<><div className="grid gap-4 sm:grid-cols-2">
           {manager?<label className="text-sm">{t('Rector for final approval')}<select disabled={!editable||busy} value={rectorId} onChange={e=>{setRectorId(e.target.value);setDirty(true);}} className={inputClass}><option value="">{t('Choose rector')}</option>{users.filter(user=>user.active&&user.role==='DIRECTOR').map(user=><option key={user.id} value={user.id}>{user.fullName}</option>)}</select></label>:<p className="self-center text-sm">{t('Evidence is submitted to the rector for final approval.')}</p>}
@@ -97,6 +98,7 @@ export const WorkPlanBoard: React.FC = () => {
           <span className="text-sm">{`${t('Mapped items')}: ${mappings.length}/${allItems.length}`}</span>
           <button disabled={busy} className={`${buttonClass} bg-slate-900 text-white dark:bg-sky-700`} onClick={()=>{void run(async()=>{await api(`/work-plans/${plan.id}/setup`,{method:'PUT',body:JSON.stringify({version:plan.workflow.version,rectorId,mappings})});setDirty(false);setNotice('Work-plan mappings saved.');});}}>{t('Save mappings')}</button>
           <button disabled={busy||dirty||mappings.length!==allItems.length||!rectorId} className={`${buttonClass} bg-sky-700 text-white`} onClick={()=>{void run(async()=>{await api(`/work-plans/${plan.id}/submit`,{method:'POST',body:JSON.stringify({version:plan.workflow.version})});setNotice('Work plan sent to rector.');});}}>{t('Send plan to rector')}</button>
+          <button disabled={busy||dirty||!mappings.length||!rectorId} className={`${buttonClass} bg-sky-700 text-white`} onClick={()=>{void run(async()=>{await api(`/work-plans/${plan.id}/submit`,{method:'POST',body:JSON.stringify({version:plan.workflow.version,publishAssignedOnly:true})});setNotice('Work plan sent to rector.');});}}>{t('Send assigned items to rector')}</button>
           {dirty&&<span className="text-sm text-amber-700">{t('Unsaved changes')}</span>}
         </div>}
         {plan.workflow.status==='PENDING_APPROVAL'&&currentUser.role==='DIRECTOR'&&currentUser.id===plan.workflow.rectorId&&<div className="space-y-3 border-t pt-4 dark:border-slate-700">
