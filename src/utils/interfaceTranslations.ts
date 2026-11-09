@@ -2525,7 +2525,13 @@ const administrationCopy: Record<string, string> = {
   "Close dialog": "Закрыть диалог¦Muloqot oynasini yopish",
   "Loading": "Загрузка¦Yuklanmoqda",
   "Previous page": "Предыдущая страница¦Oldingi sahifa",
-  "Next page": "Следующая страница¦Keyingi sahifa"
+  "Next page": "Следующая страница¦Keyingi sahifa",
+  "A new-generation state engineering university established by Resolution of the President of the Republic of Uzbekistan No. PQ-274.": "Государственный инженерный университет нового поколения, созданный в соответствии с Постановлением Президента Республики Узбекистан № PQ-274.¦O‘zbekiston Respublikasi Prezidentining PQ-274-son qaroriga muvofiq tashkil etilgan yangi avlod davlat muhandislik universiteti.",
+  "Internal staff portal": "Внутренний портал сотрудников¦Xodimlar uchun ichki portal",
+  "Assignments": "Поручения¦Topshiriqlar",
+  "Progress reports": "Отчёты о выполнении¦Bajarilish hisobotlari",
+  "Official website": "Официальный сайт¦Rasmiy sayt",
+  "Tashkent University of Technology": "Ташкентский технический университет¦Toshkent texnika universiteti"
 };
 Object.assign(interfaceTranslations, Object.fromEntries(Object.entries(administrationCopy).map(([key, value]) => {
   const [ru, uz] = value.split('¦');
