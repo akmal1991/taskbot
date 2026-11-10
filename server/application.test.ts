@@ -52,6 +52,7 @@ beforeAll(async () => {
   await database.query(await readFile(new URL('../migrations/003_prorektor_role.sql', import.meta.url), 'utf8'));
   await database.query(await readFile(new URL('../migrations/004_optional_staff_email.sql', import.meta.url), 'utf8'));
   await database.query(await readFile(new URL('../migrations/005_open_ended_plan_stages.sql', import.meta.url), 'utf8'));
+  await database.query(await readFile(new URL('../migrations/006_department_execution.sql', import.meta.url), 'utf8'));
   await database.query("INSERT INTO ut_departments(id,code,name) VALUES('dept','D1','Test department')");
   const hash = await hashPassword(password);
   for (const [id, role] of [['admin','ADMIN'],['director','DIRECTOR'],['worker','WORKER'],['other','WORKER']]) {
@@ -72,6 +73,33 @@ afterAll(async () => {
   }
 });
 describe('server authentication and fixed-role isolation', () => {
+  it('requires every employee proof and ordered independent reviews, restarting after rejection',async()=>{
+    await database.query("INSERT INTO ut_execution_items(id,department_id,source_file,source_number,title,schedule,source_responsible,assignee_ids,first_reviewer_id,final_reviewer_id) VALUES('execution-test','dept','test.docx',1,'Joint work','Monthly','Two workers',ARRAY['worker','other'],'admin','director')");
+    const get=async()=> (await request(admin,'/execution')).body.items.find(i=>i.id==='execution-test');
+    const review=async(client,decision='APPROVED')=>request(client,'/execution/execution-test/review','POST',{version:(await get()).version,decision,remarks:'Verified test decision'});
+    const submit=async(client)=>{const f=new FormData();f.set('version',String((await get()).version));f.set('note','Documented work');f.set('file',new Blob(['%PDF-1.4\nTest evidence\n%%EOF'],{type:'application/pdf'}),'evidence.pdf');return request(client,'/execution/execution-test/evidence','POST',f);};
+    expect((await review(director)).status).toBe(403);
+    expect((await submit(worker)).status).toBe(201);
+    expect((await get()).status).toBe('ASSIGNED');
+    expect((await review(admin)).status).toBe(403);
+    expect((await submit(worker)).status).toBe(409);
+    expect((await submit(other)).status).toBe(201);
+    expect((await get()).status).toBe('FIRST_REVIEW');
+    expect((await review(director)).status).toBe(403);
+    expect((await review(admin)).status).toBe(200);
+    expect((await get()).status).toBe('FINAL_REVIEW');
+    expect((await review(admin)).status).toBe(403);
+    expect((await review(director,'REJECTED')).status).toBe(200);
+    expect((await get()).cycle).toBe(2);
+    expect((await get()).evidence).toHaveLength(2);
+    expect((await submit(worker)).status).toBe(201);
+    expect((await get()).status).toBe('RETURNED');
+    expect((await submit(other)).status).toBe(201);
+    expect((await review(admin)).status).toBe(200);
+    expect((await review(director)).status).toBe(200);
+    expect((await get()).status).toBe('COMPLETED');
+    expect((await get()).reviews).toHaveLength(4);
+  });
   it('supports staff without invented email addresses while validating supplied addresses',async()=>{
     for(const username of ['no-email-one','no-email-two']){
       const created=await request(admin,'/admin/users','POST',{username,fullName:username,role:'WORKER',departmentId:'dept'});

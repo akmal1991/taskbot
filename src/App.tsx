@@ -7,6 +7,8 @@ import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoaderCircle } from 'lucide-react';
 import { canAccessView } from './utils/permissions';
+import { api } from './utils/api';
+const DepartmentExecution=lazy(()=>import('./components/DepartmentExecution').then(m=>({default:m.DepartmentExecution})));
 const ProofVerificationConsole = lazy(()=>import('./components/ProofVerificationConsole').then(m=>({default:m.ProofVerificationConsole})));
 const AdminPanel = lazy(()=>import('./components/AdminPanel').then(m=>({default:m.AdminPanel})));
 const AccountPanel = lazy(()=>import('./components/AccountPanel').then(m=>({default:m.AccountPanel})));
@@ -17,6 +19,8 @@ const WorkPlanBoard = lazy(()=>import('./components/WorkPlanBoard').then(m=>({de
 const TelegramMiniAppModal = lazy(()=>import('./components/TelegramMiniAppModal').then(m=>({default:m.TelegramMiniAppModal})));
 
 const MainLayout: React.FC = () => {
+  const [departmentExecution,setDepartmentExecution]=useState(false);
+  useEffect(()=>{void api<{enabled:boolean}>('/execution/config').then(c=>setDepartmentExecution(c.enabled)).catch(()=>{});},[]);
   const [activeView, setActiveView] = useState<string>(() => window.location.hash.slice(1) || 'dashboard');
   const { currentUser, permissions, loading, error, refreshState, isTmaOpen } = useApp();
   const visibleView = canAccessView(activeView, currentUser.role, permissions) ? activeView : 'denied';
@@ -30,6 +34,7 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener('hashchange', change);
   }, []);
 
+  if(departmentExecution)return <Suspense fallback={<p className="p-6">Yuklanmoqda…</p>}><DepartmentExecution/></Suspense>;
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-slate-200 dark:selection:bg-slate-800 transition-colors">
       {/* Top Bar */}

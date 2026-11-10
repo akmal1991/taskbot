@@ -14,6 +14,7 @@ import { verifyTelegramInitData } from './telegramAuth';
 import { isAssignee } from './taskAssignments';
 import { ticketVisibleSQL, ticketRespondSQL } from './ticketAccess';
 import { workPlanRoutes } from './workPlanRoutes';
+import { executionRoutes } from './executionRoutes';
 
 export function createApplication(database: pg.Pool, options: { telegramBotToken?: string; apiRequestLimit?: number } = {}) {
   const app = express();
@@ -38,6 +39,7 @@ export function createApplication(database: pg.Pool, options: { telegramBotToken
   api.use('/auth', authRoutes(database));
   api.use(requireAuth, csrfGuard);
   api.use('/tasks', taskRoutes(database));
+  api.use('/execution', executionRoutes(database));
   api.use('/admin', adminRoutes(database));
   api.use('/work-plans', workPlanRoutes(database));
   api.use(importRoutes(database));

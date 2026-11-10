@@ -30,10 +30,10 @@ const tabs: { id: Area; label: string; icon: React.ElementType }[] = [
 ];
 const emptyOverview: Overview = { users: [], departments: [], rolePermissions: { ADMIN: [], PROREKTOR: [], DIRECTOR: [], WORKER: [] }, permissionCeilings: { ADMIN: [], PROREKTOR: [], DIRECTOR: [], WORKER: [] }, workPlans: [], categories: [], imports: [], settings: { notificationsEnabled: false, reminderHour: 9, reminderTemplate: '' }, deliveries: [], stats: { tasks: 0, users: 0, departments: 0 } };
 
-export const AdminPanel: React.FC = () => {
+export const AdminPanel: React.FC<{simple?:boolean}> = ({simple=false}) => {
   const app = useApp() as unknown as PanelApp;
   const t = (value: string) => localizeText(value, app.language);
-  const [area, setArea] = useState<Area>('overview');
+  const [area, setArea] = useState<Area>(simple?'users':'overview');
   const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -148,7 +148,7 @@ export const AdminPanel: React.FC = () => {
   return <AdminPanelShell title={t('Administration')} subtitle={t('Central control for accounts, work plans, task governance, and system operations.')}>
     <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
       <nav aria-label={t('Administration sections')} className={`${cardClass} h-fit overflow-x-auto p-2 lg:sticky lg:top-5`}>
-        <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">{tabs.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => { setArea(id); setStatusFilter(''); setRoleFilter(''); setSortField('name'); }} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${area === id ? 'bg-slate-900 text-white dark:bg-sky-700' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}><Icon size={16} /><span>{t(label)}</span></button>)}</div>
+        <div className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">{tabs.filter(tab=>!simple||['users','departments'].includes(tab.id)).map(({ id, label, icon: Icon }) => <button key={id} onClick={() => { setArea(id); setStatusFilter(''); setRoleFilter(''); setSortField('name'); }} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition ${area === id ? 'bg-slate-900 text-white dark:bg-sky-700' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}><Icon size={16} /><span>{t(label)}</span></button>)}</div>
       </nav>
       <div className="min-w-0 space-y-4">
         {loadError && <AdminAlert tone="error"><div className="flex items-center justify-between gap-3"><span>{t('Could not load administration data')}: {loadError}</span><AdminButton onClick={() => { setLoading(true); void refreshOverview(); }}><RefreshCw size={15} />{t('Retry')}</AdminButton></div></AdminAlert>}

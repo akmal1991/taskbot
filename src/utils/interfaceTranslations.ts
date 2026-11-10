@@ -1,8 +1,10 @@
 // Interface translations. Uzbek Cyrillic is derived from the reviewed Uzbek Latin strings.
 import { securityCopy } from './securityTranslations.ts';
 import { workPlanTranslations } from './workPlanTranslations.ts';
+import { executionTranslations } from './executionTranslations.ts';
 export const interfaceTranslations: Record<string, { en: string; ru: string; 'uz-Latn'?: string }> = {
   ...workPlanTranslations,
+  ...executionTranslations,
   "Link Telegram in My account to receive task messages.": { en: "Link Telegram in My account to receive task messages.", ru: "Подключите Telegram в разделе «Мой аккаунт», чтобы получать сообщения о заданиях.", 'uz-Latn': "Topshiriq xabarlarini olish uchun Mening hisobim bo‘limida Telegramni ulang." },
   "To receive task notifications, press Start in the bot, open its Mini App, sign in, then verify your Telegram account here.": { en: "To receive task notifications, press Start in the bot, open its Mini App, sign in, then verify your Telegram account here.", ru: "Для получения уведомлений нажмите Start в боте, откройте Mini App, войдите и подтвердите здесь свой Telegram.", 'uz-Latn': "Topshiriq bildirishnomalarini olish uchun botda Start tugmasini bosing, Mini Appni oching, hisobingizga kiring va shu yerda Telegram hisobingizni tasdiqlang." },
   "Choose an active employee in the selected department.": { en: "Choose an active employee in the selected department.", ru: "Выберите активного сотрудника выбранного подразделения.", 'uz-Latn': "Tanlangan bo‘limdagi faol xodimni tanlang." },
