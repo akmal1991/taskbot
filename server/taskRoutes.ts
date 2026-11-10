@@ -4,7 +4,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { id, HttpError, transaction, audit } from './db';
 import { permit, wrap, digest } from './security';
-import { lockedTask, requireExecutable, getTasks, validateReferences } from './records';
+import { lockedTask, requireExecutable, getTasks, validateReferences, tashkentToday } from './records';
 import { PRIORITIES } from '../shared/policy';
 import { assignmentsOf, assignmentOf, isAssignee, updateAssignment } from './taskAssignments';
 import { queueAssignmentNotification } from './notifications';
@@ -46,7 +46,7 @@ export async function insertTask(db: pg.PoolClient, actorId: string, input: z.in
   for (const member of team.slice(1)) await validateReferences(db, { assignedToId: member.userId, departmentId: member.departmentId, approverId: input.approverId });
   const taskId = preserveId || id('task');
   const data = { ...(managedData?{...managedData,managedWorkPlan:true}:{}), ...(team.length > 1 ? { assignments: team.map(a => ({ ...a, status: 'ASSIGNED', progress: 0 })) } : {}), description: input.description || '', expectedOutcome: input.expectedOutcome, acceptanceCriteria: input.acceptanceCriteria,
-    sourceReference: input.sourceReference, fundingSource: input.fundingSource, assignedDate: input.assignedDate || new Date().toISOString().slice(0, 10) };
+    sourceReference: input.sourceReference, fundingSource: input.fundingSource, assignedDate: input.assignedDate || tashkentToday() };
   await db.query(`INSERT INTO ut_tasks(id,plan_code,title,creator_id,assignee_id,approver_id,department_id,work_plan_id,section_id,category_id,
     deadline,status,priority,requires_evidence,requires_approval,draft,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ASSIGNED',$12,$13,$14,$15,$16)`,
   [taskId, input.planCode, input.title, actorId, input.assignedToId, input.approverId || null, input.departmentId,

@@ -99,17 +99,23 @@ export function authRoutes(database: pg.Pool) {
   };
   router.post('/login', wrap(async (req, res) => {
     const input = z.object({ identifier: z.string().trim().min(1).max(254), password: z.string().min(1).max(128) }).strict().parse(req.body);
-    for (const source of [`ip:${req.ip}`, `account:${input.identifier.toLowerCase()}`]) {
-      const throttle = await database.query(`INSERT INTO ut_login_throttle(key,attempts,window_start) VALUES($1,1,now())
-        ON CONFLICT(key) DO UPDATE SET
-        attempts=CASE WHEN ut_login_throttle.window_start<now()-interval '15 minutes' THEN 1 ELSE ut_login_throttle.attempts+1 END,
-        window_start=CASE WHEN ut_login_throttle.window_start<now()-interval '15 minutes' THEN now() ELSE ut_login_throttle.window_start END
-        RETURNING attempts`, [digest(source)]);
-      if (throttle.rows[0].attempts > (source.startsWith('ip:') ? 30 : 10)) throw new HttpError(429, 'Too many sign-in attempts. Try again in 15 minutes.');
+    // Only failed attempts count. Counting successes would lock out a whole campus behind one NAT address
+    // after 30 ordinary sign-ins within 15 minutes.
+    const throttleKeys = [[digest(`ip:${req.ip}`), 30], [digest(`account:${input.identifier.toLowerCase()}`), 10]] as const;
+    for (const [key, limit] of throttleKeys) {
+      const current = (await database.query(`SELECT attempts FROM ut_login_throttle WHERE key=$1
+        AND window_start>=now()-interval '15 minutes'`, [key])).rows[0];
+      if ((current?.attempts ?? 0) >= limit) throw new HttpError(429, 'Too many sign-in attempts. Try again in 15 minutes.');
     }
-    const row = (await database.query('SELECT * FROM ut_users WHERE lower(username)=$1 OR lower(email)=$1', [input.identifier.toLowerCase()])).rows[0];
+    // Prefer an exact username match so one account's username can never shadow another account's email.
+    const row = (await database.query(`SELECT * FROM ut_users WHERE lower(username)=$1 OR lower(email)=$1
+      ORDER BY (lower(username)=$1) DESC LIMIT 1`, [input.identifier.toLowerCase()])).rows[0];
     const matches = await verifyPassword(input.password, row?.password_hash || dummyHash);
     if (!row?.active || !matches) {
+      for (const [key] of throttleKeys) await database.query(`INSERT INTO ut_login_throttle(key,attempts,window_start) VALUES($1,1,now())
+        ON CONFLICT(key) DO UPDATE SET
+        attempts=CASE WHEN ut_login_throttle.window_start<now()-interval '15 minutes' THEN 1 ELSE ut_login_throttle.attempts+1 END,
+        window_start=CASE WHEN ut_login_throttle.window_start<now()-interval '15 minutes' THEN now() ELSE ut_login_throttle.window_start END`, [key]);
       await audit(database, req, 'LOGIN_FAILED', undefined, null, null, 'Unsuccessful sign-in attempt.');
       throw new HttpError(401, 'Invalid credentials or account unavailable.');
     }

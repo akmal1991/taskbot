@@ -651,4 +651,20 @@ describe('administrative modules and security regressions', () => {
     for(let attempt=0;attempt<11;attempt++) result=await request(null,'/auth/login','POST',{identifier:'rate-limited-account',password:'bad-credentials'});
     expect(result.status).toBe(429);
   }, 20000);
+  it('does not count successful sign-ins toward the shared network limit', async () => {
+    // A campus behind one NAT address must not be locked out by ordinary morning sign-ins.
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const result = await request(null, '/auth/login', 'POST', { identifier: 'worker', password });
+      expect(result.status).toBe(200);
+    }
+  }, 60000);
+  it('writes deadlines into Telegram notifications without a timezone day shift', async () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'Asia/Tashkent';
+    try {
+      const task = await create('TZ-DEADLINE-1', { deadline: '2028-12-31' });
+      const notice = (await database.query("SELECT body FROM ut_notifications WHERE task_id=$1 AND type='NEW_ASSIGNMENT'", [task.id])).rows[0];
+      expect(notice.body).toContain('Bajarish muddati: 2028-12-31');
+    } finally { if (previousTz === undefined) delete process.env.TZ; else process.env.TZ = previousTz; }
+  });
 });

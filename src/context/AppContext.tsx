@@ -67,8 +67,13 @@ export const AppProvider: React.FC<React.PropsWithChildren> = ({ children }) => 
   }, [theme]);
   const setLanguage = (next: Language) => { setLanguageState(saveLanguagePreference(next)); };
   const mutate = async <T,>(path: string, body?: unknown, method = 'POST'): Promise<T> => {
-    try { const result = await api<T>(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); await refreshState(); return result; }
+    let result: T;
+    try { result = await api<T>(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }); }
     catch (e) { setError((e as Error).message); throw e; }
+    // The change is already saved. A failed refresh must not be reported as a failed save
+    // (users would retry and hit duplicate/version conflicts); refreshState sets its own error.
+    await refreshState().catch(() => {});
+    return result;
   };
   const version = (taskId: string) => {
     const task = state.tasks.find(t => t.id === taskId);

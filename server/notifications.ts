@@ -3,7 +3,8 @@ import { audit, id, HttpError, transaction, type DB } from './db';
 import { priorityLabels, prioritySticker } from './prioritySticker';
 
 export async function queueAssignmentNotification(db: DB, taskId: string, userId: string, departmentId: string) {
-  const task = (await db.query(`SELECT t.*,creator.full_name AS creator_name,recipient.full_name AS recipient_name,
+  // Format dates in SQL: pg parses DATE as local midnight, so toISOString() shifts it a day back on UTC+ servers.
+  const task = (await db.query(`SELECT t.*,to_char(t.deadline,'YYYY-MM-DD') AS deadline_text,creator.full_name AS creator_name,recipient.full_name AS recipient_name,
     d.name AS department_name,c.name AS category_name,p.title AS work_plan_title,p.data->'workflow' AS plan_workflow FROM ut_tasks t
     JOIN ut_users creator ON creator.id=t.creator_id JOIN ut_users recipient ON recipient.id=$2
     JOIN ut_departments d ON d.id=$3 LEFT JOIN ut_categories c ON c.id=t.category_id LEFT JOIN ut_work_plans p ON p.id=t.work_plan_id WHERE t.id=$1`, [taskId,userId,departmentId])).rows[0];
@@ -12,7 +13,7 @@ export async function queueAssignmentNotification(db: DB, taskId: string, userId
     ...(task.plan_workflow ? [`📚 Ish rejasi: ${task.work_plan_title}`] : []),
     `🔢 Reja kodi: ${task.plan_code}`, `📝 Band / bosqich: ${task.title}`,
     ...(!task.plan_workflow ? [`🚦 Muhimlik: ${priorityLabels[task.priority] || task.priority}`] : []),
-    `📅 Bajarish muddati: ${task.deadline?new Date(task.deadline).toISOString().slice(0,10):task.data?.scheduleKind==='CONTRACT'?'Shartnomaga muvofiq':'Doimiy'}`,
+    `📅 Bajarish muddati: ${task.deadline_text?task.deadline_text:task.data?.scheduleKind==='CONTRACT'?'Shartnomaga muvofiq':'Doimiy'}`,
     `${task.plan_workflow?'👤 Rejani tasdiqlagan rektor':'👤 Topshiriq beruvchi'}: ${task.creator_name}`, `🏢 Mas’ul bo‘lim: ${task.department_name}`,
     `👷 Ijrochi: ${task.recipient_name}`, ...(task.category_name ? [`🗂 Kategoriya: ${task.category_name}`] : []),
     ...(task.data?.description ? ['', '📄 Amalga oshirish mexanizmi:', String(task.data.description).slice(0,1800)] : []),
@@ -36,14 +37,14 @@ export async function runNotificationJob(database: pg.Pool, job: 'reminders' | '
       throw new HttpError(409, 'This notification job is already running.');
     let processed = 0;
     if (job === 'reminders') {
-      const tasks = (await db.query(`SELECT t.*,member->>'userId' AS recipient_id FROM ut_tasks t
+      const tasks = (await db.query(`SELECT t.*,to_char(t.deadline,'YYYY-MM-DD') AS deadline_text,member->>'userId' AS recipient_id FROM ut_tasks t
         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(t.data->'assignments',jsonb_build_array(jsonb_build_object('userId',t.assignee_id,'status',t.status)))) member
         JOIN ut_users u ON u.id=member->>'userId'
         WHERE u.active=true AND t.deadline<=(now() AT TIME ZONE 'Asia/Tashkent')::date+1 AND member->>'status'<>'COMPLETED' AND NOT t.draft AND t.archived_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM ut_notifications n WHERE n.task_id=t.id AND n.user_id=u.id AND n.type='DEADLINE_WARNING_2H'
           AND (n.created_at AT TIME ZONE 'Asia/Tashkent')::date=(now() AT TIME ZONE 'Asia/Tashkent')::date)`)).rows;
       for (const t of tasks) {
-        const body = String(settings.reminderTemplate).replaceAll('{task}', t.title).replaceAll('{deadline}', new Date(t.deadline).toISOString().slice(0, 10));
+        const body = String(settings.reminderTemplate).replaceAll('{task}', t.title).replaceAll('{deadline}', t.deadline_text);
         await db.query(`INSERT INTO ut_notifications(id,user_id,task_id,type,title,body) VALUES($1,$2,$3,'DEADLINE_WARNING_2H',$4,$5)`, [id('notice'), t.recipient_id, t.id, t.plan_code, body]);
         processed++;
       }

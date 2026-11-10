@@ -127,11 +127,24 @@ const POPULAR_SEARCH_TAGS = [
   'Smart Campus'
 ];
 
-/**
- * Calculates deadline proximity and urgency level
- * Local reference date: 2026-10-22
- */
-export function calculateDeadlineInfo(deadlineStr: string, status: TaskStatus) {
+/** Today's date (YYYY-MM-DD) on the user's own calendar. toISOString() would give the UTC date (yesterday before 05:00 in Tashkent). */
+const localDateString = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
+/** Calculates deadline proximity and urgency level relative to the user's local date. */
+export function calculateDeadlineInfo(deadlineStr: string, status: TaskStatus, scheduleKind?: string) {
+  // Open-ended work-plan stages (continuous or contract-based) have no date; never compute "NaN days".
+  if (status !== 'COMPLETED' && !/^\d{4}-\d{2}-\d{2}$/.test(deadlineStr || '')) {
+    return {
+      daysLeft: Number.POSITIVE_INFINITY,
+      urgency: 'NORMAL' as const,
+      label: scheduleKind === 'CONTRACT' ? 'Contract schedule' : 'Continuous execution',
+      badgeClass: 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+      rowHighlight: '',
+    };
+  }
   if (status === 'COMPLETED') {
     return {
       daysLeft: 999,
@@ -325,12 +338,12 @@ export const TaskRegister: React.FC = () => {
   // Approaching deadline tasks list (due in <= 14 days or overdue, not completed)
   const approachingDeadlineTasks = tasks.filter(t => {
     if (t.status === 'COMPLETED') return false;
-    const info = calculateDeadlineInfo(t.deadline, t.status);
+    const info = calculateDeadlineInfo(t.deadline, t.status, t.scheduleKind);
     return info.urgency !== 'NORMAL';
   });
 
   const criticalDeadlineTasks = approachingDeadlineTasks.filter(t => {
-    const info = calculateDeadlineInfo(t.deadline, t.status);
+    const info = calculateDeadlineInfo(t.deadline, t.status, t.scheduleKind);
     return info.urgency === 'OVERDUE' || info.urgency === 'CRITICAL_URGENT';
   });
 
@@ -433,7 +446,7 @@ export const TaskRegister: React.FC = () => {
     const matchesStatus = selectedStatus === 'all' || (selectedStatus === 'OVERDUE' ? task.isOverdue : task.status === selectedStatus);
     const matchesPriority = selectedPriority === 'all' || task.priority === selectedPriority;
     const matchesApproaching = !filterApproachingOnly || (
-      task.status !== 'COMPLETED' && calculateDeadlineInfo(task.deadline, task.status).urgency !== 'NORMAL'
+      task.status !== 'COMPLETED' && calculateDeadlineInfo(task.deadline, task.status, task.scheduleKind).urgency !== 'NORMAL'
     );
 
     return matchesSearch && matchesDept && matchesSection && matchesStatus && matchesPriority && matchesApproaching;
@@ -442,7 +455,7 @@ export const TaskRegister: React.FC = () => {
   // Export tasks to CSV
   const handleExportCsv = (filteredOnly: boolean = false) => {
     const listToExport = filteredOnly ? filteredTasks : tasks;
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = localDateString();
     const fileName = filteredOnly && isAnyFilterActive
       ? `ToshTech_ish_reja_filterlangan_${dateStr}.csv`
       : `ToshTech_ish_reja_hisoboti_${dateStr}.csv`;
@@ -484,7 +497,7 @@ export const TaskRegister: React.FC = () => {
       createdByName: currentUser.fullName,
       approverId: newApproverId,
       approverName: users.find(u => u.id === newApproverId)?.fullName || '',
-      assignedDate: new Date().toISOString().split('T')[0],
+      assignedDate: localDateString(),
       deadline: newDeadline,
       progressPercent: 0,
     }); } catch { return; }
@@ -574,7 +587,7 @@ export const TaskRegister: React.FC = () => {
                 {/* Quick interactive task chips */}
                 <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
                   {approachingDeadlineTasks.slice(0, 5).map((t) => {
-                    const dInfo = calculateDeadlineInfo(t.deadline, t.status);
+                    const dInfo = calculateDeadlineInfo(t.deadline, t.status, t.scheduleKind);
                     return (
                       <button
                         key={t.id}
@@ -1103,7 +1116,7 @@ export const TaskRegister: React.FC = () => {
                     ) : (
                       colTasks.map((task) => {
                         const isDragging = draggedTaskId === task.id;
-                        const dInfo = calculateDeadlineInfo(task.deadline, task.status);
+                        const dInfo = calculateDeadlineInfo(task.deadline, task.status, task.scheduleKind);
                         const commentsCount = countTotalComments(task);
 
                         return (
@@ -1280,7 +1293,7 @@ export const TaskRegister: React.FC = () => {
                   </tr>
                 ) : (
                   filteredTasks.map((task) => {
-                    const dInfo = calculateDeadlineInfo(task.deadline, task.status);
+                    const dInfo = calculateDeadlineInfo(task.deadline, task.status, task.scheduleKind);
                     const commentsCount = countTotalComments(task);
 
                     return (
@@ -1437,7 +1450,7 @@ export const TaskRegister: React.FC = () => {
 
                   {/* Deadline status in modal */}
                   {(() => {
-                    const info = calculateDeadlineInfo(selectedTask.deadline, selectedTask.status);
+                    const info = calculateDeadlineInfo(selectedTask.deadline, selectedTask.status, selectedTask.scheduleKind);
                     if (info.urgency !== 'NORMAL') {
                       return (
                         <span className={`inline-flex items-center gap-1 font-mono text-[10px] px-2 py-0.5 rounded-full border ${info.badgeClass}`}>
@@ -1603,7 +1616,7 @@ export const TaskRegister: React.FC = () => {
                       <span className="font-mono font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
                         <span>{selectedTask.deadline}</span>
                         {(() => {
-                          const info = calculateDeadlineInfo(selectedTask.deadline, selectedTask.status);
+                          const info = calculateDeadlineInfo(selectedTask.deadline, selectedTask.status, selectedTask.scheduleKind);
                           if (info.urgency !== 'NORMAL') {
                             return (
                               <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${info.badgeClass}`}>

@@ -8,6 +8,9 @@ export const taskSelect = `SELECT t.*,to_char(t.deadline,'YYYY-MM-DD') AS deadli
  c.full_name AS creator_name,r.full_name AS approver_name,d.name AS department_name,s.title AS section_title
  FROM ut_tasks t JOIN ut_users a ON a.id=t.assignee_id JOIN ut_users c ON c.id=t.creator_id
  JOIN ut_departments d ON d.id=t.department_id LEFT JOIN ut_users r ON r.id=t.approver_id LEFT JOIN ut_sections s ON s.id=t.section_id`;
+/** Today's civil date (YYYY-MM-DD) in the university's timezone, independent of the server clock's zone. */
+export const tashkentToday = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 export const taskDto = (t: any) => ({
   ...t.data, id: t.id, planCode: t.plan_code, title: t.title, status: t.status,
   // Managed plan items inherit their plan's priority; no item-level priority is exposed.
@@ -20,7 +23,7 @@ export const taskDto = (t: any) => ({
   archivedAt: t.archived_at, version: t.version, workPlanId: t.work_plan_id, sectionId: t.section_id,
   sectionTitle: t.section_title, categoryId: t.category_id, createdAt: t.created_at, updatedAt: t.updated_at,
   isOverdue: !t.archived_at && !t.draft && t.status !== 'COMPLETED' &&
-    t.deadline_text < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date()),
+    Boolean(t.deadline_text) && t.deadline_text < tashkentToday(),
   isClockedIn: !['PENDING','ASSIGNED'].includes(t.status), proofs: [], comments: [],
 });
 export async function lockedTask(db: DB, taskId: string, actor: Actor, version?: number) {
