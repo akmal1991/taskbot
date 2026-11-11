@@ -1,4 +1,6 @@
 const copy:Record<string,[string,string]>={
+ 'Yangi bildirishnomalar (':['New notifications (','Новые уведомления ('],
+ 'Barchasini ko‘rish':['View all','Показать все'],'Bandni ochish':['Open item','Открыть пункт'],
  'ToshTech · Bo‘linmalar ish rejasi':['ToshTech · Department work plans','ToshTech · Планы подразделений'],
  'Mening hisobim':['My account','Мой аккаунт'],'Chiqish':['Sign out','Выйти'],'Asosiy menyu':['Main navigation','Основное меню'],
  'Ish rejalari':['Work plans','Планы работ'],'Bildirishnomalar (':['Notifications (','Уведомления ('],'Xodimlar va bo‘linmalar':['Staff and departments','Сотрудники и подразделения'],

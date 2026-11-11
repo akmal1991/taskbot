@@ -42,6 +42,7 @@ export function executionRoutes(database:pg.Pool){
    const ready=t.assignee_ids.every((u:string)=>submitted.includes(u))&&t.unresolved_roles.length===0;
    await db.query('UPDATE ut_execution_items SET status=$2,version=version+1,updated_at=now() WHERE id=$1',[t.id,ready?'FIRST_REVIEW':t.status]);
    await notify(db,[t.first_reviewer_id],t.title,`${req.actor!.fullName} dalil yubordi. ${submitted.length}/${t.assignee_ids.length} ijrochi topshirgan.${ready?' Barcha dalillar tekshirishga tayyor.':''}`);
+   await notify(db,ready?t.assignee_ids:[req.actor!.id],t.title,ready?'📨 Barcha ijrochilar dalil yubordi. Dalillar Akmal Rustamov tekshiruviga yuborildi.':`📨 Dalilingiz qabul qilindi. ${submitted.length}/${t.assignee_ids.length} ijrochi dalil yuborgan. Qolgan ijrochilar yoki belgilanmagan mas’ullar kutilmoqda.`);
    await audit(db,req,'EXECUTION_EVIDENCE_SUBMITTED',t.id,null,{cycle:t.cycle,ready});
   });res.status(201).json({ok:true});
  }));
@@ -62,7 +63,10 @@ export function executionRoutes(database:pg.Pool){
    await db.query('INSERT INTO ut_execution_reviews(id,item_id,reviewer_id,cycle,stage,decision,remarks) VALUES($1,$2,$3,$4,$5,$6,$7)',[id('review'),t.id,req.actor!.id,t.cycle,first?'FIRST':'FINAL',input.decision,input.remarks]);
    const rejected=input.decision==='REJECTED',status=rejected?'RETURNED':first?'FINAL_REVIEW':'COMPLETED';
    await db.query('UPDATE ut_execution_items SET status=$2,cycle=cycle+$3,version=version+1,updated_at=now() WHERE id=$1',[t.id,status,rejected?1:0]);
-   await notify(db,rejected||!first?t.assignee_ids:[t.final_reviewer_id],t.title,rejected?`Tuzatish uchun qaytarildi: ${input.remarks}`:first?'Akmal Rustamov tasdiqladi. Yakuniy qaroringiz kutilmoqda.':'G‘ayrat Asomidinov yakuniy tasdiqladi. Ish bajarildi.');
+   const reviewer=first?'Akmal Rustamov':'G‘ayrat Asomidinov (ijrochi direktor)';
+   const decisionText=rejected?`↩️ ${reviewer} dalilni tuzatish uchun qaytardi.\nSabab: ${input.remarks}\nDalilni tuzatib, qayta yuboring. Yangi dalillar avval Akmal Rustamov tekshiruvidan o‘tadi.`:first?`✅ Akmal Rustamov dalilni tasdiqladi.\nDalillar G‘ayrat Asomidinovning yakuniy tasdig‘iga yuborildi. Hali yakuniy tasdiq kutilmoqda.${input.remarks?`\nIzoh: ${input.remarks}`:''}`:`✅ G‘ayrat Asomidinov dalilni yakuniy tasdiqladi.\nIsh rejasi bandi bajarildi.${input.remarks?`\nIzoh: ${input.remarks}`:''}`;
+   await notify(db,[...t.assignee_ids,...(!first?[t.first_reviewer_id]:[])],t.title,decisionText);
+   if(first&&!rejected)await notify(db,[t.final_reviewer_id],t.title,`📋 Akmal Rustamov dalillarni tasdiqladi. Yakuniy qaroringiz kutilmoqda.${input.remarks?`\nIzoh: ${input.remarks}`:''}`);
    await audit(db,req,'EXECUTION_REVIEW',t.id,{status:t.status},{status,cycle:t.cycle,decision:input.decision},input.remarks);
   });res.json({ok:true});
  }));

@@ -81,6 +81,8 @@ describe('server authentication and fixed-role isolation', () => {
     expect((await review(director)).status).toBe(403);
     expect((await submit(worker)).status).toBe(201);
     expect((await get()).status).toBe('ASSIGNED');
+    const notices=async(user)=> (await database.query("SELECT body FROM ut_notifications WHERE user_id=$1 AND title='Joint work' ORDER BY created_at,id",[user])).rows.map(n=>n.body);
+    expect((await notices('worker')).some(n=>n.includes('Dalilingiz qabul qilindi'))).toBe(true);
     expect((await review(admin)).status).toBe(403);
     expect((await submit(worker)).status).toBe(409);
     expect((await submit(other)).status).toBe(201);
@@ -88,8 +90,11 @@ describe('server authentication and fixed-role isolation', () => {
     expect((await review(director)).status).toBe(403);
     expect((await review(admin)).status).toBe(200);
     expect((await get()).status).toBe('FINAL_REVIEW');
+    for(const user of ['worker','other'])expect((await notices(user)).some(n=>n.includes('Akmal Rustamov dalilni tasdiqladi')&&n.includes('Hali yakuniy tasdiq kutilmoqda'))).toBe(true);
+    expect((await notices('director')).filter(n=>n.includes('Yakuniy qaroringiz kutilmoqda'))).toHaveLength(1);
     expect((await review(admin)).status).toBe(403);
     expect((await review(director,'REJECTED')).status).toBe(200);
+    for(const user of ['worker','other','admin'])expect((await notices(user)).some(n=>n.includes('G‘ayrat Asomidinov (ijrochi direktor)')&&n.includes('Sabab: Verified test decision')&&n.includes('qayta yuboring'))).toBe(true);
     expect((await get()).cycle).toBe(2);
     expect((await get()).evidence).toHaveLength(2);
     expect((await submit(worker)).status).toBe(201);
@@ -98,6 +103,7 @@ describe('server authentication and fixed-role isolation', () => {
     expect((await review(admin)).status).toBe(200);
     expect((await review(director)).status).toBe(200);
     expect((await get()).status).toBe('COMPLETED');
+    for(const user of ['worker','other','admin'])expect((await notices(user)).some(n=>n.includes('yakuniy tasdiqladi')&&n.includes('bandi bajarildi'))).toBe(true);
     expect((await get()).reviews).toHaveLength(4);
   });
   it('supports staff without invented email addresses while validating supplied addresses',async()=>{
