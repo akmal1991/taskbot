@@ -81,8 +81,10 @@ describe('server authentication and fixed-role isolation', () => {
     expect((await review(director)).status).toBe(403);
     expect((await submit(worker)).status).toBe(201);
     expect((await get()).status).toBe('ASSIGNED');
+    expect((await get()).evidence.map(e=>e.user_id)).toEqual(['worker']);
     const notices=async(user)=> (await database.query("SELECT body FROM ut_notifications WHERE user_id=$1 AND title='Joint work' ORDER BY created_at,id",[user])).rows.map(n=>n.body);
     expect((await notices('worker')).some(n=>n.includes('Dalilingiz qabul qilindi'))).toBe(true);
+    expect((await notices('admin')).some(n=>n.includes('1/2')&&n.includes('Kutilmoqda: other'))).toBe(true);
     expect((await review(admin)).status).toBe(403);
     expect((await submit(worker)).status).toBe(409);
     expect((await submit(other)).status).toBe(201);

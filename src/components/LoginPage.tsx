@@ -13,7 +13,7 @@ const languages: { value: Language; label: string }[] = [
 // Tashkent University of Technology brand palette (tashkenttech-edu.uz).
 const field = 'min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-normal text-slate-900 outline-none transition focus:border-[#143D5A] focus:ring-4 focus:ring-[#143D5A]/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-sky-400 dark:focus:ring-sky-400/15';
 const labelClass = 'block space-y-2 text-[13px] font-semibold text-slate-700 dark:text-slate-300';
-const primary = 'flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#143D5A] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#0F2F46] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E54519]/30 disabled:opacity-60 dark:bg-[#E54519] dark:hover:bg-[#C93B12]';
+const primary = 'flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#ec4815] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#c9380b] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#E54519]/30 disabled:opacity-60 dark:bg-[#E54519] dark:hover:bg-[#C93B12]';
 const linkClass = 'w-full text-center text-sm font-semibold text-[#143D5A] transition hover:text-[#E54519] hover:underline dark:text-sky-300';
 
 export const LoginPage: React.FC = () => {
@@ -62,7 +62,7 @@ export const LoginPage: React.FC = () => {
   const features = [t('Work plans'), t('Assignments'), t('Progress reports')];
 
   return <main style={{ fontFamily: "'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif" }} className="min-h-[100dvh] bg-[#F3F5F8] text-slate-900 dark:bg-slate-950 dark:text-slate-100 lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-    <aside className="relative overflow-hidden bg-[#143D5A] text-white">
+    <aside className="relative overflow-hidden bg-[#ec4815] text-white">
       <div aria-hidden="true" className="absolute inset-0 opacity-[.07]" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
       <div aria-hidden="true" className="absolute -bottom-40 -right-40 h-[28rem] w-[28rem] rounded-full bg-[#E54519]/20 blur-3xl" />
       <div aria-hidden="true" className="absolute left-0 top-0 h-1 w-full bg-[#E54519]" />

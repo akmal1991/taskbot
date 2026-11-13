@@ -41,7 +41,9 @@ export function executionRoutes(database:pg.Pool){
    const submitted=(await db.query('SELECT user_id FROM ut_execution_evidence WHERE item_id=$1 AND cycle=$2',[t.id,t.cycle])).rows.map(r=>r.user_id);
    const ready=t.assignee_ids.every((u:string)=>submitted.includes(u))&&t.unresolved_roles.length===0;
    await db.query('UPDATE ut_execution_items SET status=$2,version=version+1,updated_at=now() WHERE id=$1',[t.id,ready?'FIRST_REVIEW':t.status]);
-   await notify(db,[t.first_reviewer_id],t.title,`${req.actor!.fullName} dalil yubordi. ${submitted.length}/${t.assignee_ids.length} ijrochi topshirgan.${ready?' Barcha dalillar tekshirishga tayyor.':''}`);
+   const waitingIds=t.assignee_ids.filter((u:string)=>!submitted.includes(u));
+   const waitingNames=(await db.query('SELECT full_name FROM ut_users WHERE id=ANY($1::text[]) ORDER BY full_name',[waitingIds])).rows.map(u=>u.full_name);
+   await notify(db,[t.first_reviewer_id],t.title,`${req.actor!.fullName} dalil yubordi. ${submitted.length}/${t.assignee_ids.length} ijrochi topshirgan.${ready?' Barcha dalillar tekshirishga tayyor.':`${waitingNames.length?`\nKutilmoqda: ${waitingNames.join(', ')}`:''}${t.unresolved_roles.length?`\nIjrochi belgilanmagan: ${t.unresolved_roles.join(', ')}`:''}`}`);
    await notify(db,ready?t.assignee_ids:[req.actor!.id],t.title,ready?'📨 Barcha ijrochilar dalil yubordi. Dalillar Akmal Rustamov tekshiruviga yuborildi.':`📨 Dalilingiz qabul qilindi. ${submitted.length}/${t.assignee_ids.length} ijrochi dalil yuborgan. Qolgan ijrochilar yoki belgilanmagan mas’ullar kutilmoqda.`);
    await audit(db,req,'EXECUTION_EVIDENCE_SUBMITTED',t.id,null,{cycle:t.cycle,ready});
   });res.status(201).json({ok:true});
@@ -82,6 +84,7 @@ export function executionRoutes(database:pg.Pool){
    const ready=input.assigneeIds.length>0&&!input.unresolvedRoles.length&&input.assigneeIds.every(u=>submitted.includes(u));
    await db.query('UPDATE ut_execution_items SET assignee_ids=$2,unresolved_roles=$3,status=$4,version=version+1,updated_at=now() WHERE id=$1',[t.id,input.assigneeIds,input.unresolvedRoles,ready?'FIRST_REVIEW':t.status]);
    await notify(db,input.assigneeIds.filter(u=>!t.assignee_ids.includes(u)),t.title,`Sizga ish rejasi bandi biriktirildi. Muddat: ${t.schedule}`);
+   if(ready)await notify(db,[t.first_reviewer_id],t.title,'Barcha ijrochilar aniqlandi va barcha dalillar jamlandi. Tekshirishingiz kutilmoqda.');
    await audit(db,req,'EXECUTION_ASSIGNED',t.id,{assignees:t.assignee_ids},input);
   });res.json({ok:true});
  }));
